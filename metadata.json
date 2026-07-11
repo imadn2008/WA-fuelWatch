@@ -1,0 +1,6 @@
+{
+  "name": "WA FuelWatch",
+  "description": "Real-time Western Australia fuel price checker and map interface matching all advanced sorting, filters, and today vs tomorrow comparison functionalities.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
