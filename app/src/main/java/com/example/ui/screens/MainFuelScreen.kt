@@ -1280,8 +1280,8 @@ fun FuelMapView(
         <head>
             <meta charset="utf-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
             <style>
                 html, body, #map {
                     height: 100%;
@@ -1289,13 +1289,11 @@ fun FuelMapView(
                     margin: 0;
                     padding: 0;
                     background-color: ${if (isDark) "#1a1c1e" else "#fdfbff"};
-                    /* Invert light tiles in dark theme to generate Google Maps Dark Mode! */
-                    ${if (isDark) "filter: invert(90%) hue-rotate(180deg) brightness(105%) contrast(95%);" else ""}
                 }
-                /* Re-invert pins so their colors are perfect and normal! */
+                /* Invert light tiles in dark theme to generate Google Maps Dark Mode! */
                 ${if (isDark) """
-                .custom-leaflet-icon {
-                    filter: invert(100%) hue-rotate(180deg);
+                .leaflet-tile {
+                    filter: invert(90%) hue-rotate(180deg) brightness(105%) contrast(95%);
                 }
                 """ else ""}
                 $pinStyles
@@ -1336,11 +1334,32 @@ fun FuelMapView(
                 window.markersGroup = null;
                 window.stationsData = [];
                 window.userLocationMarker = null;
+                window.currentCenter = [-31.9505, 115.8605]; // Default to Perth CBD
+                window.hasSetInitialView = false;
+
+                function getDistance(lat1, lon1, lat2, lon2) {
+                    var R = 6371; // km
+                    var dLat = (lat2 - lat1) * Math.PI / 180;
+                    var dLon = (lon2 - lon1) * Math.PI / 180;
+                    var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                            Math.sin(dLon/2) * Math.sin(dLon/2);
+                    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                    return R * c;
+                }
 
                 function initMap() {
                     try {
-                        // Default to Western Australia (WA) map view: Centered on WA state at [-26.0, 121.0], zoom 5
-                        window.mapInstance = L.map('map', { zoomControl: false }).setView([-26.0, 121.0], 5);
+                        if (typeof L === 'undefined') {
+                            console.error("Leaflet (L) is not loaded yet.");
+                            setTimeout(initMap, 200);
+                            return;
+                        }
+                        if (window.mapInstance) {
+                            return; // already initialized
+                        }
+                        
+                        window.mapInstance = L.map('map', { zoomControl: false }).setView(window.currentCenter, 11);
                         
                         L.tileLayer('$tileLayerUrl', {
                             attribution: '&copy; Google Maps standard tiles',
@@ -1353,6 +1372,13 @@ fun FuelMapView(
                         if (window.stationsData && window.stationsData.length > 0) {
                             loadMarkers(window.stationsData);
                         }
+
+                        // Force invalidateSize to prevent black or gray screens due to hidden rendering measurements
+                        setTimeout(function() {
+                            if (window.mapInstance) {
+                                window.mapInstance.invalidateSize();
+                            }
+                        }, 300);
                     } catch (e) {
                         console.error("Failed to initialize Leaflet Map: " + e.message);
                     }
@@ -1360,6 +1386,8 @@ fun FuelMapView(
 
                 function setUserLocation(lat, lng, shouldCenter) {
                     if (!window.mapInstance || typeof L === 'undefined') return;
+                    
+                    window.currentCenter = [lat, lng];
                     
                     if (window.userLocationMarker) {
                         window.mapInstance.removeLayer(window.userLocationMarker);
@@ -1374,8 +1402,9 @@ fun FuelMapView(
                     
                     window.userLocationMarker = L.marker([lat, lng], { icon: pulseIcon }).addTo(window.mapInstance);
                     
-                    if (shouldCenter) {
+                    if (shouldCenter || !window.hasSetInitialView) {
                         window.mapInstance.setView([lat, lng], 13);
+                        window.hasSetInitialView = true;
                     }
                 }
 
@@ -1384,6 +1413,10 @@ fun FuelMapView(
                     if (!window.mapInstance || !window.markersGroup || typeof L === 'undefined') return;
 
                     var map = window.mapInstance;
+                    
+                    // Always make sure Leaflet recalculates map size so it is fully visible and not black
+                    map.invalidateSize();
+
                     var markersGroup = window.markersGroup;
                     markersGroup.clearLayers();
 
@@ -1398,6 +1431,9 @@ fun FuelMapView(
 
                     var minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
                     var markerCount = 0;
+                    var nearbyCount = 0;
+                    var centerLat = window.currentCenter[0];
+                    var centerLng = window.currentCenter[1];
 
                     stations.forEach(function(s) {
                         if (!s.lat || !s.lng || s.lat === 0 || s.lng === 0) return;
@@ -1424,18 +1460,50 @@ fun FuelMapView(
                             AndroidInterface.onStationClick(JSON.stringify(s));
                         });
 
-                        minLat = Math.min(minLat, s.lat);
-                        maxLat = Math.max(maxLat, s.lat);
-                        minLng = Math.min(minLng, s.lng);
-                        maxLng = Math.max(maxLng, s.lng);
+                        // For bounds fitting: only fit bounds around stations within 30km of our current location (Perth by default)
+                        var dist = getDistance(centerLat, centerLng, s.lat, s.lng);
+                        if (dist <= 30) {
+                            minLat = Math.min(minLat, s.lat);
+                            maxLat = Math.max(maxLat, s.lat);
+                            minLng = Math.min(minLng, s.lng);
+                            maxLng = Math.max(maxLng, s.lng);
+                            nearbyCount++;
+                        }
                         markerCount++;
                     });
 
-                    // Auto fit map bounds if we have stations to present them beautifully
-                    if (markerCount > 0) {
-                        map.fitBounds([[minLat, minLng], [maxLat, maxLng]], { padding: [30, 30] });
+                    // Auto fit map bounds if we have nearby stations
+                    if (nearbyCount > 0) {
+                        if (nearbyCount === 1) {
+                            map.setView([minLat, minLng], 13);
+                        } else {
+                            map.fitBounds([[minLat, minLng], [maxLat, maxLng]], { padding: [40, 40] });
+                        }
                     } else {
-                        map.setView([-26.0, 121.0], 5);
+                        // Fallback: Center on the closest station to the current viewport center
+                        if (markerCount > 0) {
+                            var closestStation = null;
+                            var minDist = Infinity;
+                            stations.forEach(function(s) {
+                                if (!s.lat || !s.lng || s.lat === 0 || s.lng === 0) return;
+                                var d = getDistance(centerLat, centerLng, s.lat, s.lng);
+                                if (d < minDist) {
+                                    minDist = d;
+                                    closestStation = s;
+                                }
+                            });
+                            if (closestStation) {
+                                var latL = Math.min(centerLat, closestStation.lat);
+                                var latH = Math.max(centerLat, closestStation.lat);
+                                var lngL = Math.min(centerLng, closestStation.lng);
+                                var lngH = Math.max(centerLng, closestStation.lng);
+                                map.fitBounds([[latL, lngL], [latH, lngH]], { padding: [50, 50] });
+                            } else {
+                                map.setView(window.currentCenter, 11);
+                            }
+                        } else {
+                            map.setView(window.currentCenter, 11);
+                        }
                     }
                 }
 
@@ -1443,6 +1511,13 @@ fun FuelMapView(
                 window.onload = function() {
                     initMap();
                 };
+                
+                // Extra safety: execute initialization immediately if document is already loaded
+                if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                    initMap();
+                } else {
+                    document.addEventListener('DOMContentLoaded', initMap);
+                }
             </script>
         </body>
         </html>
