@@ -22,15 +22,31 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Proactively initialize Chromium WebView cache directories to prevent opendir (No such file or directory) errors in logs
+        try {
+            val jsDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/js")
+            if (!jsDir.exists()) {
+                jsDir.mkdirs()
+            }
+            val wasmDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/wasm")
+            if (!wasmDir.exists()) {
+                wasmDir.mkdirs()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error initializing WebView cache folders", e)
+        }
+
         enableEdgeToEdge()
         setContent {
             val themeMode by viewModel.themeMode.collectAsState()
+            val themeColor by viewModel.themeColor.collectAsState()
             val darkTheme = when (themeMode) {
                 AppTheme.SYSTEM -> isSystemInDarkTheme()
                 AppTheme.LIGHT -> false
                 AppTheme.DARK -> true
             }
-            MyApplicationTheme(darkTheme = darkTheme) {
+            MyApplicationTheme(darkTheme = darkTheme, themeColor = themeColor) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

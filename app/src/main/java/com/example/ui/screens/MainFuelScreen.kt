@@ -52,6 +52,8 @@ import com.example.ui.SortOption
 import com.example.ui.PricingStats
 import com.example.ui.AppTheme
 import com.example.ui.DesignStyle
+import com.example.ui.ThemeColor
+import com.example.ui.theme.getThemeColors
 import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,9 +81,26 @@ fun MainFuelScreen(
     val selectedSuburb by viewModel.selectedSuburb.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val sortBy by viewModel.sortBy.collectAsState()
+
+    val allLoadedStations by viewModel.stations.collectAsState()
+    val mapStations = remember(allLoadedStations, selectedBrand, searchQuery) {
+        var list = allLoadedStations
+        if (selectedBrand.isNotBlank()) {
+            list = list.filter { it.brand.equals(selectedBrand, ignoreCase = true) }
+        }
+        if (searchQuery.isNotBlank()) {
+            list = list.filter {
+                it.tradingName.contains(searchQuery, ignoreCase = true) ||
+                it.address.contains(searchQuery, ignoreCase = true) ||
+                it.location.contains(searchQuery, ignoreCase = true)
+            }
+        }
+        list
+    }
     
     val designStyle by viewModel.designStyle.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
+    val themeColor by viewModel.themeColor.collectAsState()
     val isDark = MaterialTheme.colorScheme.background.red < 0.5f
 
     // Dynamic app-bar container colors based on design style
@@ -133,45 +152,54 @@ fun MainFuelScreen(
                     }
                 },
                 title = {
-                    when (selectedTab) {
-                        0 -> {
-                            Text(
-                                text = "Price Trends",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 20.sp,
-                                color = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.onSurface,
-                                fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default
-                            )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        val screenTitleText = when (selectedTab) {
+                            0 -> "Price Trends"
+                            1 -> "Trip Planner"
+                            2 -> "Near Me"
+                            3 -> "My Watchlist"
+                            else -> "App Settings"
                         }
-                        1 -> {
-                            Text(
-                                text = "Trip Planner",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 20.sp,
-                                color = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.onSurface,
-                                fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default
-                            )
-                        }
-                        2 -> {
-                            // Fuel type dropdown selector in top bar matching screenshot (e.g. E10-U91 selection)
+                        Text(
+                            text = screenTitleText,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 20.sp,
+                            color = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.onSurface,
+                            fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default
+                        )
+
+                        if (selectedTab in 0..3) {
                             Box(modifier = Modifier.wrapContentSize()) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
                                         .clickable { isProductMenuExpanded = true }
-                                        .padding(8.dp)
+                                        .background(
+                                            color = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF).copy(alpha = 0.12f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF).copy(alpha = 0.3f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
                                     Text(
                                         text = selectedProduct.displayName,
                                         fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 18.sp,
-                                        color = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 14.sp,
+                                        color = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.primary,
                                         fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default
                                     )
                                     Icon(
                                         imageVector = Icons.Default.ArrowDropDown,
                                         contentDescription = "Choose Fuel Type",
-                                        tint = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.primary
+                                        tint = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                                 DropdownMenu(
@@ -189,24 +217,6 @@ fun MainFuelScreen(
                                     }
                                 }
                             }
-                        }
-                        3 -> {
-                            Text(
-                                text = "My Watchlist",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 20.sp,
-                                color = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.onSurface,
-                                fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default
-                            )
-                        }
-                        4 -> {
-                            Text(
-                                text = "App Settings",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 20.sp,
-                                color = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.onSurface,
-                                fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default
-                            )
                         }
                     }
                 },
@@ -357,15 +367,18 @@ fun MainFuelScreen(
                             )
                             1 -> MyTripView(
                                 stations = stations,
-                                suburbs = viewModel.popularSuburbs,
+                                suburbs = viewModel.allSuburbs.collectAsState().value,
                                 designStyle = designStyle,
                                 onStationClick = { activeStationForDetails = it },
                                 isFoldUnfolded = isFoldUnfolded,
                                 favoriteIds = favoriteIds,
-                                onFavoriteToggle = { viewModel.toggleFavorite(it) }
+                                onFavoriteToggle = { viewModel.toggleFavorite(it) },
+                                userLocation = viewModel.userLocation.collectAsState().value,
+                                onGpsClick = { viewModel.updateUserLocation() }
                             )
                             2 -> NearMeView(
                                 stations = stations,
+                                allStations = mapStations,
                                 favoriteIds = favoriteIds,
                                 isMapView = isMapView,
                                 isFoldUnfolded = isFoldUnfolded,
@@ -381,7 +394,7 @@ fun MainFuelScreen(
                                 sortBy = sortBy,
                                 onSortChange = { viewModel.setSortBy(it) },
                                 brands = viewModel.availableBrands,
-                                suburbs = viewModel.popularSuburbs,
+                                suburbs = viewModel.allSuburbs.collectAsState().value,
                                 stats = stats,
                                 userLocation = viewModel.userLocation.collectAsState().value,
                                 onGpsClick = { viewModel.updateUserLocation() }
@@ -399,7 +412,9 @@ fun MainFuelScreen(
                                 onThemeSelect = { viewModel.setThemeMode(it) },
                                 currentDesignStyle = designStyle,
                                 onDesignStyleSelect = { viewModel.setDesignStyle(it) },
-                                isFoldUnfolded = isFoldUnfolded
+                                isFoldUnfolded = isFoldUnfolded,
+                                currentThemeColor = themeColor,
+                                onThemeColorSelect = { viewModel.setThemeColor(it) }
                             )
                         }
                     }
@@ -420,11 +435,10 @@ fun MainFuelScreen(
 
             if (showThemeSettings) {
                 ThemeSettingsSheet(
-                    currentTheme = viewModel.themeMode.collectAsState().value,
-                    onThemeSelect = {
-                        viewModel.setThemeMode(it)
-                        showThemeSettings = false
-                    },
+                    currentTheme = themeMode,
+                    onThemeSelect = { viewModel.setThemeMode(it) },
+                    currentThemeColor = themeColor,
+                    onThemeColorSelect = { viewModel.setThemeColor(it) },
                     onClose = { showThemeSettings = false }
                 )
             }
@@ -1052,11 +1066,13 @@ fun FuelMapView(
     designStyle: DesignStyle,
     onStationClick: (FuelStation) -> Unit,
     userLocation: Location? = null,
-    onGpsClick: (() -> Unit)? = null
+    onGpsClick: (() -> Unit)? = null,
+    selectedSuburb: String = ""
 ) {
     val context = LocalContext.current
     val isDark = MaterialTheme.colorScheme.background.red < 0.5f
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var forceCenterTrigger by remember { mutableStateOf(0) }
 
     // Request launcher for GPS location permission
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -1069,9 +1085,17 @@ fun FuelMapView(
         }
     }
 
-    LaunchedEffect(userLocation) {
+    LaunchedEffect(userLocation, forceCenterTrigger) {
         userLocation?.let { loc ->
-            webViewRef?.evaluateJavascript("setUserLocation(${loc.latitude}, ${loc.longitude}, true);", null)
+            val forceCenter = forceCenterTrigger > 0
+            val isInWA = loc.latitude in -36.0..-13.0 && loc.longitude in 113.0..129.0
+            webViewRef?.evaluateJavascript("setUserLocation(${loc.latitude}, ${loc.longitude}, ${forceCenter || isInWA});", null)
+        }
+    }
+
+    LaunchedEffect(selectedSuburb) {
+        if (selectedSuburb.isNotBlank()) {
+            webViewRef?.evaluateJavascript("centerOnSuburb('$selectedSuburb');", null)
         }
     }
 
@@ -1332,6 +1356,7 @@ fun FuelMapView(
                 // Standard Map initialized centering on Perth
                 window.mapInstance = null;
                 window.markersGroup = null;
+                window.allStations = [];
                 window.stationsData = [];
                 window.userLocationMarker = null;
                 window.currentCenter = [-31.9505, 115.8605]; // Default to Perth CBD
@@ -1359,7 +1384,7 @@ fun FuelMapView(
                             return; // already initialized
                         }
                         
-                        window.mapInstance = L.map('map', { zoomControl: false }).setView(window.currentCenter, 11);
+                        window.mapInstance = L.map('map', { zoomControl: false }).setView(window.currentCenter, 13);
                         
                         L.tileLayer('$tileLayerUrl', {
                             attribution: '&copy; Google Maps standard tiles',
@@ -1367,6 +1392,11 @@ fun FuelMapView(
                         }).addTo(window.mapInstance);
 
                         window.markersGroup = L.layerGroup().addTo(window.mapInstance);
+
+                        // Listen to moveend event to load markers dynamically in real-time as the map moves
+                        window.mapInstance.on('moveend', function() {
+                            updateVisibleMarkers();
+                        });
 
                         // If markers were loaded prior to map initialization, draw them immediately!
                         if (window.stationsData && window.stationsData.length > 0) {
@@ -1408,15 +1438,22 @@ fun FuelMapView(
                     }
                 }
 
-                function loadMarkers(stations) {
-                    window.stationsData = stations;
-                    if (!window.mapInstance || !window.markersGroup || typeof L === 'undefined') return;
-
-                    var map = window.mapInstance;
+                function updateVisibleMarkers() {
+                    if (!window.mapInstance || !window.markersGroup || !window.allStations) return;
                     
-                    // Always make sure Leaflet recalculates map size so it is fully visible and not black
-                    map.invalidateSize();
+                    var bounds = window.mapInstance.getBounds();
+                    var visibleStations = window.allStations.filter(function(s) {
+                        if (!s.lat || !s.lng) return false;
+                        return bounds.contains(L.latLng(s.lat, s.lng));
+                    });
+                    
+                    drawMarkersList(visibleStations);
+                }
 
+                function drawMarkersList(stations) {
+                    if (!window.mapInstance || !window.markersGroup || typeof L === 'undefined') return;
+                    
+                    var map = window.mapInstance;
                     var markersGroup = window.markersGroup;
                     markersGroup.clearLayers();
 
@@ -1428,12 +1465,6 @@ fun FuelMapView(
 
                     var cheapBoundary = prices[Math.floor(prices.length * 0.25)] || 0;
                     var expensiveBoundary = prices[Math.floor(prices.length * 0.75)] || 0;
-
-                    var minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-                    var markerCount = 0;
-                    var nearbyCount = 0;
-                    var centerLat = window.currentCenter[0];
-                    var centerLng = window.currentCenter[1];
 
                     stations.forEach(function(s) {
                         if (!s.lat || !s.lng || s.lat === 0 || s.lng === 0) return;
@@ -1459,52 +1490,43 @@ fun FuelMapView(
                         marker.on('click', function() {
                             AndroidInterface.onStationClick(JSON.stringify(s));
                         });
-
-                        // For bounds fitting: only fit bounds around stations within 30km of our current location (Perth by default)
-                        var dist = getDistance(centerLat, centerLng, s.lat, s.lng);
-                        if (dist <= 30) {
-                            minLat = Math.min(minLat, s.lat);
-                            maxLat = Math.max(maxLat, s.lat);
-                            minLng = Math.min(minLng, s.lng);
-                            maxLng = Math.max(maxLng, s.lng);
-                            nearbyCount++;
-                        }
-                        markerCount++;
                     });
+                }
 
-                    // Auto fit map bounds if we have nearby stations
-                    if (nearbyCount > 0) {
-                        if (nearbyCount === 1) {
-                            map.setView([minLat, minLng], 13);
-                        } else {
-                            map.fitBounds([[minLat, minLng], [maxLat, maxLng]], { padding: [40, 40] });
-                        }
-                    } else {
-                        // Fallback: Center on the closest station to the current viewport center
-                        if (markerCount > 0) {
-                            var closestStation = null;
-                            var minDist = Infinity;
-                            stations.forEach(function(s) {
-                                if (!s.lat || !s.lng || s.lat === 0 || s.lng === 0) return;
-                                var d = getDistance(centerLat, centerLng, s.lat, s.lng);
-                                if (d < minDist) {
-                                    minDist = d;
-                                    closestStation = s;
-                                }
-                            });
-                            if (closestStation) {
-                                var latL = Math.min(centerLat, closestStation.lat);
-                                var latH = Math.max(centerLat, closestStation.lat);
-                                var lngL = Math.min(centerLng, closestStation.lng);
-                                var lngH = Math.max(centerLng, closestStation.lng);
-                                map.fitBounds([[latL, lngL], [latH, lngH]], { padding: [50, 50] });
-                            } else {
-                                map.setView(window.currentCenter, 11);
-                            }
-                        } else {
-                            map.setView(window.currentCenter, 11);
-                        }
+                function centerOnSuburb(suburbName) {
+                    if (!window.mapInstance || !window.allStations || !suburbName) return;
+                    var subStations = window.allStations.filter(function(s) {
+                        return s.location && s.location.toLowerCase() === suburbName.toLowerCase();
+                    });
+                    if (subStations.length > 0) {
+                        var sumLat = 0, sumLng = 0;
+                        subStations.forEach(function(s) {
+                            sumLat += s.lat;
+                            sumLng += s.lng;
+                        });
+                        var avgLat = sumLat / subStations.length;
+                        var avgLng = sumLng / subStations.length;
+                        window.mapInstance.setView([avgLat, avgLng], 13);
+                        window.hasSetInitialView = true;
                     }
+                }
+
+                function loadMarkers(stations) {
+                    window.allStations = stations;
+                    window.stationsData = stations;
+                    
+                    if (!window.mapInstance || typeof L === 'undefined') return;
+
+                    // Always make sure Leaflet recalculates map size so it is fully visible and not black
+                    window.mapInstance.invalidateSize();
+
+                    if (!window.hasSetInitialView) {
+                        var defaultCenter = [-31.9505, 115.8605]; // Perth CBD
+                        window.mapInstance.setView(defaultCenter, 13);
+                        window.hasSetInitialView = true;
+                    }
+
+                    updateVisibleMarkers();
                 }
 
                 // Run init on window load
@@ -1528,6 +1550,10 @@ fun FuelMapView(
         AndroidView(
             factory = { ctx ->
                 WebView(ctx).apply {
+                    layoutParams = android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    )
                     webViewRef = this
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
@@ -1546,8 +1572,12 @@ fun FuelMapView(
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             evaluateJavascript("loadMarkers($stationsJson);", null)
+                            if (selectedSuburb.isNotBlank()) {
+                                evaluateJavascript("centerOnSuburb('$selectedSuburb');", null)
+                            }
                             userLocation?.let { loc ->
-                                evaluateJavascript("setUserLocation(${loc.latitude}, ${loc.longitude}, false);", null)
+                                val isInWA = loc.latitude in -36.0..-13.0 && loc.longitude in 113.0..129.0
+                                evaluateJavascript("setUserLocation(${loc.latitude}, ${loc.longitude}, $isInWA);", null)
                             }
                         }
                     }
@@ -1569,7 +1599,7 @@ fun FuelMapView(
                     }, "AndroidInterface")
 
                     tag = isDark
-                    loadDataWithBaseURL("https://localhost", mapHtml, "text/html", "UTF-8", null)
+                    loadDataWithBaseURL("file:///android_asset/", mapHtml, "text/html", "UTF-8", null)
                 }
             },
             update = { webViewInstance ->
@@ -1577,11 +1607,15 @@ fun FuelMapView(
                 val lastIsDark = webViewInstance.tag as? Boolean
                 if (lastIsDark != isDark) {
                     webViewInstance.tag = isDark
-                    webViewInstance.loadDataWithBaseURL("https://localhost", mapHtml, "text/html", "UTF-8", null)
+                    webViewInstance.loadDataWithBaseURL("file:///android_asset/", mapHtml, "text/html", "UTF-8", null)
                 } else {
                     webViewInstance.evaluateJavascript("loadMarkers($stationsJson);", null)
+                    if (selectedSuburb.isNotBlank()) {
+                        webViewInstance.evaluateJavascript("centerOnSuburb('$selectedSuburb');", null)
+                    }
                     userLocation?.let { loc ->
-                        webViewInstance.evaluateJavascript("setUserLocation(${loc.latitude}, ${loc.longitude}, false);", null)
+                        val isInWA = loc.latitude in -36.0..-13.0 && loc.longitude in 113.0..129.0
+                        webViewInstance.evaluateJavascript("setUserLocation(${loc.latitude}, ${loc.longitude}, $isInWA);", null)
                     }
                 }
             },
@@ -1604,6 +1638,7 @@ fun FuelMapView(
                     ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
                     if (hasFine || hasCoarse) {
+                        forceCenterTrigger++
                         onGpsClick()
                     } else {
                         permissionLauncher.launch(
@@ -1967,8 +2002,11 @@ fun getBrandColor(brandName: String): Color {
 fun ThemeSettingsSheet(
     currentTheme: AppTheme,
     onThemeSelect: (AppTheme) -> Unit,
+    currentThemeColor: ThemeColor,
+    onThemeColorSelect: (ThemeColor) -> Unit,
     onClose: () -> Unit
 ) {
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -2070,6 +2108,52 @@ fun ThemeSettingsSheet(
                                 thickness = 1.dp,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "Theme Accent Color",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                        .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ThemeColor.values().forEach { col ->
+                        val isSelected = currentThemeColor == col
+                        val mappedColor = getThemeColors(col, isDark).first
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(mappedColor)
+                                .border(
+                                    width = if (isSelected) 3.dp else 1.dp,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                    shape = CircleShape
+                                )
+                                .clickable { onThemeColorSelect(col) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = if (isDark) Color.Black else Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -2274,7 +2358,9 @@ fun SettingsAndInfoView(
     onThemeSelect: (AppTheme) -> Unit,
     currentDesignStyle: DesignStyle,
     onDesignStyleSelect: (DesignStyle) -> Unit,
-    isFoldUnfolded: Boolean = false
+    isFoldUnfolded: Boolean = false,
+    currentThemeColor: ThemeColor,
+    onThemeColorSelect: (ThemeColor) -> Unit
 ) {
     val isDark = MaterialTheme.colorScheme.background.red < 0.5f
 
@@ -2445,6 +2531,90 @@ fun SettingsAndInfoView(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+            // Section 2.5: Theme Accent Color Selection
+            item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(24.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ColorLens,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "Theme Accent Color",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            Text(
+                                text = "Personalize your experience by selecting one of our high-contrast, beautiful premium color schemes.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceAround,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                ThemeColor.values().forEach { col ->
+                                    val isSelected = currentThemeColor == col
+                                    val mappedColor = getThemeColors(col, isDark).first
+                                    Box(
+                                        modifier = Modifier
+                                            .size(54.dp)
+                                            .clip(CircleShape)
+                                            .background(mappedColor.copy(alpha = if (isSelected) 1f else 0.4f))
+                                            .border(
+                                                width = if (isSelected) 3.dp else 1.dp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                                shape = CircleShape
+                                            )
+                                            .clickable { onThemeColorSelect(col) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = if (isDark) Color.Black else Color.White,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .background(mappedColor, CircleShape)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Text(
+                                text = "Selected Palette: ${currentThemeColor.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                            )
                         }
                     }
                 }
@@ -2756,6 +2926,90 @@ fun SettingsAndInfoView(
                     }
                 }
             }
+
+            // Section 2.5: Theme Accent Color Selection
+            item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(24.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ColorLens,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "Theme Accent Color",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            Text(
+                                text = "Personalize your experience by selecting one of our high-contrast, beautiful premium color schemes.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceAround,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                ThemeColor.values().forEach { col ->
+                                    val isSelected = currentThemeColor == col
+                                    val mappedColor = getThemeColors(col, isDark).first
+                                    Box(
+                                        modifier = Modifier
+                                            .size(54.dp)
+                                            .clip(CircleShape)
+                                            .background(mappedColor.copy(alpha = if (isSelected) 1f else 0.4f))
+                                            .border(
+                                                width = if (isSelected) 3.dp else 1.dp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                                shape = CircleShape
+                                            )
+                                            .clickable { onThemeColorSelect(col) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = if (isDark) Color.Black else Color.White,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .background(mappedColor, CircleShape)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Text(
+                                text = "Selected Palette: ${currentThemeColor.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                            )
+                        }
+                    }
+                }
 
             // Section 3: WA FuelWatch Information & Legend
             item {
@@ -3272,13 +3526,15 @@ fun MyTripView(
     onStationClick: (FuelStation) -> Unit,
     isFoldUnfolded: Boolean,
     favoriteIds: Set<String>,
-    onFavoriteToggle: (FuelStation) -> Unit
+    onFavoriteToggle: (FuelStation) -> Unit,
+    userLocation: Location?,
+    onGpsClick: () -> Unit
 ) {
     var startSuburb by remember { mutableStateOf("PERTH") }
     var endSuburb by remember { mutableStateOf("MANDURAH") }
     
-    var isStartExpanded by remember { mutableStateOf(false) }
-    var isEndExpanded by remember { mutableStateOf(false) }
+    var isStartSearchOpen by remember { mutableStateOf(false) }
+    var isEndSearchOpen by remember { mutableStateOf(false) }
 
     // Derive intermediate suburbs on the trip leg to build a realistic timeline route
     val intermediateSuburbs = remember(startSuburb, endSuburb) {
@@ -3327,38 +3583,56 @@ fun MyTripView(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Start Suburb dropdown selection list
+                    // Start Suburb selection
                     Box(modifier = Modifier.weight(1f)) {
                         OutlinedTextField(
                             value = startSuburb,
                             onValueChange = {},
                             readOnly = true,
                             label = { Text("Start Suburb") },
-                            trailingIcon = { IconButton(onClick = { isStartExpanded = true }) { Icon(Icons.Default.ArrowDropDown, null) } },
-                            modifier = Modifier.fillMaxWidth()
+                            trailingIcon = { IconButton(onClick = { isStartSearchOpen = true }) { Icon(Icons.Default.Search, null) } },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { isStartSearchOpen = true },
+                            enabled = false,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                                disabledBorderColor = MaterialTheme.colorScheme.outline,
+                                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         )
-                        DropdownMenu(expanded = isStartExpanded, onDismissRequest = { isStartExpanded = false }) {
-                            suburbs.take(15).forEach { sub ->
-                                DropdownMenuItem(text = { Text(sub) }, onClick = { startSuburb = sub; isStartExpanded = false })
-                            }
-                        }
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { isStartSearchOpen = true }
+                        )
                     }
 
-                    // End Suburb dropdown selection list
+                    // End Suburb selection
                     Box(modifier = Modifier.weight(1f)) {
                         OutlinedTextField(
                             value = endSuburb,
                             onValueChange = {},
                             readOnly = true,
                             label = { Text("End Suburb") },
-                            trailingIcon = { IconButton(onClick = { isEndExpanded = true }) { Icon(Icons.Default.ArrowDropDown, null) } },
-                            modifier = Modifier.fillMaxWidth()
+                            trailingIcon = { IconButton(onClick = { isEndSearchOpen = true }) { Icon(Icons.Default.Search, null) } },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { isEndSearchOpen = true },
+                            enabled = false,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                                disabledBorderColor = MaterialTheme.colorScheme.outline,
+                                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         )
-                        DropdownMenu(expanded = isEndExpanded, onDismissRequest = { isEndExpanded = false }) {
-                            suburbs.take(15).forEach { sub ->
-                                DropdownMenuItem(text = { Text(sub) }, onClick = { endSuburb = sub; isEndExpanded = false })
-                            }
-                        }
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { isEndSearchOpen = true }
+                        )
                     }
                 }
             }
@@ -3469,11 +3743,35 @@ fun MyTripView(
             }
             Column(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
+                    .weight(1.3f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Real-time Route Map Card
                 Card(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1.1f),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        FuelMapView(
+                            stations = stationsOnRoute,
+                            designStyle = designStyle,
+                            onStationClick = onStationClick,
+                            userLocation = userLocation,
+                            onGpsClick = onGpsClick
+                        )
+                    }
+                }
+
+                // All Route Stations List Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.9f),
                     shape = RoundedCornerShape(20.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
@@ -3487,7 +3785,7 @@ fun MyTripView(
                             text = "All Route Stations (${stationsOnRoute.size})",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(bottom = 12.dp)
+                            modifier = Modifier.padding(bottom = 8.dp)
                         )
 
                         LazyColumn(
@@ -3508,7 +3806,7 @@ fun MyTripView(
             }
         }
     } else {
-        // Compact Scrollable Layout (unified LazyColumn to prevent nested scrolling conflicts!)
+        // Compact Scrollable Layout with embedded map!
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -3516,6 +3814,29 @@ fun MyTripView(
         ) {
             item { tripParametersCard() }
             item { cheapestStopBlock() }
+            
+            // Interactive Route Map item
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        FuelMapView(
+                            stations = stationsOnRoute,
+                            designStyle = designStyle,
+                            onStationClick = onStationClick,
+                            userLocation = userLocation,
+                            onGpsClick = onGpsClick
+                        )
+                    }
+                }
+            }
+
             if (stationsOnRoute.isNotEmpty()) {
                 item {
                     Text(
@@ -3536,12 +3857,110 @@ fun MyTripView(
             }
         }
     }
+
+    if (isStartSearchOpen) {
+        SuburbSearchTripDialog(
+            title = "Select Start Suburb",
+            suburbs = suburbs,
+            onSelect = {
+                startSuburb = it
+                isStartSearchOpen = false
+            },
+            onDismiss = { isStartSearchOpen = false }
+        )
+    }
+
+    if (isEndSearchOpen) {
+        SuburbSearchTripDialog(
+            title = "Select End Suburb",
+            suburbs = suburbs,
+            onSelect = {
+                endSuburb = it
+                isEndSearchOpen = false
+            },
+            onDismiss = { isEndSearchOpen = false }
+        )
+    }
+}
+
+@Composable
+fun SuburbSearchTripDialog(
+    title: String,
+    suburbs: List<String>,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filtered = remember(searchQuery, suburbs) {
+        suburbs.filter { it.contains(searchQuery, ignoreCase = true) }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search suburb...") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(filtered) { sub ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(sub) },
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                        ) {
+                            Text(
+                                text = sub,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+                    if (filtered.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("No suburbs found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 // 14. Responsive Toggleable NearMe Main Search Panel (3rd Tab)
 @Composable
 fun NearMeView(
     stations: List<FuelStation>,
+    allStations: List<FuelStation>,
     favoriteIds: Set<String>,
     isMapView: Boolean,
     isFoldUnfolded: Boolean,
@@ -3608,11 +4027,12 @@ fun NearMeView(
                     .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), RoundedCornerShape(24.dp))
             ) {
                 FuelMapView(
-                    stations = stations,
+                    stations = allStations,
                     designStyle = designStyle,
                     onStationClick = onStationClick,
                     userLocation = userLocation,
-                    onGpsClick = onGpsClick
+                    onGpsClick = onGpsClick,
+                    selectedSuburb = selectedSuburb
                 )
             }
         }
@@ -3637,11 +4057,12 @@ fun NearMeView(
             Box(modifier = Modifier.weight(1f)) {
                 if (isMapView) {
                     FuelMapView(
-                        stations = stations,
+                        stations = allStations,
                         designStyle = designStyle,
                         onStationClick = onStationClick,
                         userLocation = userLocation,
-                        onGpsClick = onGpsClick
+                        onGpsClick = onGpsClick,
+                        selectedSuburb = selectedSuburb
                     )
                 } else {
                     FuelListView(

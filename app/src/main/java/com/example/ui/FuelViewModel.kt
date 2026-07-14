@@ -25,6 +25,10 @@ enum class DesignStyle {
     MATERIAL_3, GLASSMORPHIC, FUTURISTIC, MATERIAL_EXPERIENCE, IOS_26_GLASS
 }
 
+enum class ThemeColor {
+    BLUE, GREEN, ORANGE, PURPLE, RED
+}
+
 class FuelViewModel(application: Application) : AndroidViewModel(application) {
     private val TAG = "FuelViewModel"
 
@@ -42,6 +46,20 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
     fun setThemeMode(theme: AppTheme) {
         _themeMode.value = theme
         prefs.edit().putString("theme_mode", theme.name).apply()
+    }
+
+    private val _themeColor = MutableStateFlow(
+        try {
+            ThemeColor.valueOf(prefs.getString("theme_color", ThemeColor.BLUE.name) ?: ThemeColor.BLUE.name)
+        } catch (e: Exception) {
+            ThemeColor.BLUE
+        }
+    )
+    val themeColor: StateFlow<ThemeColor> = _themeColor.asStateFlow()
+
+    fun setThemeColor(color: ThemeColor) {
+        _themeColor.value = color
+        prefs.edit().putString("theme_color", color.name).apply()
     }
 
     private val _designStyle = MutableStateFlow(
@@ -71,7 +89,7 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedBrand = MutableStateFlow("") // Empty for all
     val selectedBrand: StateFlow<String> = _selectedBrand.asStateFlow()
 
-    private val _selectedSuburb = MutableStateFlow("") // Empty for all
+    private val _selectedSuburb = MutableStateFlow("PERTH") // Default to Perth
     val selectedSuburb: StateFlow<String> = _selectedSuburb.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
@@ -319,6 +337,19 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
         "BUNBURY", "ALBANY", "GERALDTON", "KALGOORLIE", "CANNINGTON", "SUBIACO", "OSBORNE PARK", 
         "SCARBOROUGH", "BALCATTA", "MORLEY", "VICTORIA PARK", "BELMONT", "GOSNELLS", "WANNEROO"
     ).sorted()
+
+    val allSuburbs: StateFlow<List<String>> = _stations.map { list ->
+        val suburbsFromStations = list.map { it.location.trim().uppercase() }.filter { it.isNotBlank() }.distinct()
+        if (suburbsFromStations.isEmpty()) {
+            popularSuburbs
+        } else {
+            suburbsFromStations.sorted()
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = popularSuburbs
+    )
 
     // Helper to calculate distance in KM
     fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
