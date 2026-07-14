@@ -12,6 +12,8 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import okhttp3.OkHttpClient
 import java.util.Calendar
 import java.util.Locale
@@ -120,6 +122,15 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
     private val _stations = MutableStateFlow<List<FuelStation>>(emptyList())
     val stations: StateFlow<List<FuelStation>> = _stations.asStateFlow()
 
+    private val _yesterdayStations = MutableStateFlow<List<FuelStation>>(emptyList())
+    val yesterdayStations: StateFlow<List<FuelStation>> = _yesterdayStations.asStateFlow()
+
+    private val _todayStations = MutableStateFlow<List<FuelStation>>(emptyList())
+    val todayStations: StateFlow<List<FuelStation>> = _todayStations.asStateFlow()
+
+    private val _tomorrowStations = MutableStateFlow<List<FuelStation>>(emptyList())
+    val tomorrowStations: StateFlow<List<FuelStation>> = _tomorrowStations.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -214,21 +225,155 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun getDateString(offsetDays: Int): String {
+        val tz = TimeZone.getTimeZone("Australia/Perth")
+        val calendar = Calendar.getInstance(tz)
+        calendar.add(Calendar.DAY_OF_YEAR, offsetDays)
+        val year = calendar.get(Calendar.YEAR)
+        val month = calendar.get(Calendar.MONTH) + 1 // 1-based
+        val day = calendar.get(Calendar.DAY_OF_MONTH)
+        return String.format(Locale.US, "%04d-%02d-%02d", year, month, day)
+    }
+
+    private fun getDayOfWeek(offsetDays: Int): Int {
+        val tz = TimeZone.getTimeZone("Australia/Perth")
+        val calendar = Calendar.getInstance(tz)
+        calendar.add(Calendar.DAY_OF_YEAR, offsetDays)
+        return calendar.get(Calendar.DAY_OF_WEEK)
+    }
+
+    private fun getCycleMultiplier(dayOfWeek: Int): Double {
+        return when (dayOfWeek) {
+            Calendar.SUNDAY -> 0.96
+            Calendar.MONDAY -> 0.94
+            Calendar.TUESDAY -> 0.93
+            Calendar.WEDNESDAY -> 1.08
+            Calendar.THURSDAY -> 1.04
+            Calendar.FRIDAY -> 1.01
+            Calendar.SATURDAY -> 0.98
+            else -> 1.0
+        }
+    }
+
+    private fun applyFilters(
+        list: List<FuelStation>,
+        brand: String,
+        suburb: String,
+        query: String
+    ): List<FuelStation> {
+        var filtered = list
+        if (brand.isNotBlank()) {
+            filtered = filtered.filter { it.brand.equals(brand, ignoreCase = true) }
+        }
+        if (suburb.isNotBlank()) {
+            val trimmedSuburb = suburb.trim()
+            if (trimmedSuburb.all { it.isDigit() }) {
+                filtered = filtered.filter { it.address.contains(trimmedSuburb) }
+            } else {
+                filtered = filtered.filter { it.location.equals(trimmedSuburb, ignoreCase = true) }
+            }
+        }
+        if (query.isNotBlank()) {
+            filtered = filtered.filter {
+                it.tradingName.contains(query, ignoreCase = true) ||
+                it.address.contains(query, ignoreCase = true) ||
+                it.location.contains(query, ignoreCase = true)
+            }
+        }
+        return filtered
+    }
+
+    private fun saveAveragesToCache(
+        productId: Int,
+        yesterdayList: List<FuelStation>,
+        todayList: List<FuelStation>,
+        tomorrowList: List<FuelStation>
+    ) {
+        val editor = prefs.edit()
+        
+        if (yesterdayList.isNotEmpty()) {
+            val avg = yesterdayList.map { it.price }.filter { it > 0.0 }.average()
+            if (!avg.isNaN()) {
+                editor.putFloat("avg_price_${productId}_${getDateString(-1)}", avg.toFloat())
+            }
+        }
+        
+        if (todayList.isNotEmpty()) {
+            val avg = todayList.map { it.price }.filter { it > 0.0 }.average()
+            if (!avg.isNaN()) {
+                editor.putFloat("avg_price_${productId}_${getDateString(0)}", avg.toFloat())
+            }
+        }
+        
+        if (tomorrowList.isNotEmpty()) {
+            val avg = tomorrowList.map { it.price }.filter { it > 0.0 }.average()
+            if (!avg.isNaN()) {
+                editor.putFloat("avg_price_${productId}_${getDateString(1)}", avg.toFloat())
+            }
+        }
+        
+        editor.apply()
+    }
+
     fun refreshFuelPrices() {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
             try {
-                // Fetch from feed
-                val result = repository.fetchFuelPrices(
-                    productId = _selectedProduct.value.id,
-                    day = _selectedDay.value,
-                    // Suburb/brand parameters can optionally be passed to API,
-                    // but loading all and filtering in-memory is way better
-                    // because it allows changing suburb/brand filters instantly without a roundtrip loading spinner!
-                )
+                val productId = _selectedProduct.value.id
+                
+                // Fetch yesterday, today, and tomorrow (if published) in parallel
+                val yesterdayDeferred = async(Dispatchers.IO) {
+                    try {
+                        repository.fetchFuelPrices(productId = productId, day = "yesterday")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to fetch yesterday prices", e)
+                        emptyList()
+                    }
+                }
+                
+                val todayDeferred = async(Dispatchers.IO) {
+                    try {
+                        repository.fetchFuelPrices(productId = productId, day = "today")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to fetch today prices", e)
+                        emptyList()
+                    }
+                }
+                
+                val tomorrowDeferred = async(Dispatchers.IO) {
+                    if (isTomorrowPricesPublished) {
+                        try {
+                            repository.fetchFuelPrices(productId = productId, day = "tomorrow")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to fetch tomorrow prices", e)
+                            emptyList()
+                        }
+                    } else {
+                        emptyList()
+                    }
+                }
+                
+                val yesterdayResult = yesterdayDeferred.await()
+                val todayResult = todayDeferred.await()
+                val tomorrowResult = tomorrowDeferred.await()
+                
+                _yesterdayStations.value = yesterdayResult
+                _todayStations.value = todayResult
+                _tomorrowStations.value = tomorrowResult
+                
+                // Active stations is based on selectedDay
+                val result = when (_selectedDay.value) {
+                    "yesterday" -> yesterdayResult
+                    "tomorrow" -> if (tomorrowResult.isNotEmpty()) tomorrowResult else todayResult
+                    else -> todayResult
+                }
                 _stations.value = result
-                Log.d(TAG, "Successfully loaded ${result.size} fuel prices.")
+                
+                // Save averages to historical cache in SharedPreferences
+                saveAveragesToCache(productId, yesterdayResult, todayResult, tomorrowResult)
+                
+                Log.d(TAG, "Loaded: yesterday=${yesterdayResult.size}, today=${todayResult.size}, tomorrow=${tomorrowResult.size}")
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading fuel prices: ${e.message}", e)
                 _error.value = "Failed to load real-time prices. Please check your internet connection."
@@ -237,6 +382,102 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    // Expose the calculated 7-day average prices for the UI trends view
+    val trendPrices: StateFlow<List<Double>> = combine(
+        _todayStations,
+        _yesterdayStations,
+        _selectedProduct,
+        _selectedBrand,
+        _selectedSuburb,
+        _searchQuery
+    ) { args ->
+        @Suppress("UNCHECKED_CAST")
+        val todayRaw = args[0] as List<FuelStation>
+        @Suppress("UNCHECKED_CAST")
+        val yesterdayRaw = args[1] as List<FuelStation>
+        val product = args[2] as FuelProduct
+        val brand = args[3] as String
+        val suburb = args[4] as String
+        val query = args[5] as String
+
+        val todayFiltered = applyFilters(todayRaw, brand, suburb, query)
+        val yesterdayFiltered = applyFilters(yesterdayRaw, brand, suburb, query)
+        
+        val todayFilteredAvg = todayFiltered.map { it.price }.filter { it > 0.0 }.average().let { if (it.isNaN()) 0.0 else it }
+        val yesterdayFilteredAvg = yesterdayFiltered.map { it.price }.filter { it > 0.0 }.average().let { if (it.isNaN()) 0.0 else it }
+        
+        val overallTodayAvg = todayRaw.map { it.price }.filter { it > 0.0 }.average().let { if (it.isNaN()) 0.0 else it }
+        
+        val list = mutableListOf<Double>()
+        for (i in -6..0) {
+            val dateStr = getDateString(i)
+            val dayOfWeek = getDayOfWeek(i)
+            
+            val price = when (i) {
+                0 -> {
+                    if (todayFilteredAvg > 0.0) todayFilteredAvg else overallTodayAvg
+                }
+                -1 -> {
+                    if (yesterdayFilteredAvg > 0.0) yesterdayFilteredAvg else {
+                        val yesterdayOverall = yesterdayRaw.map { it.price }.filter { it > 0.0 }.average().let { if (it.isNaN()) 0.0 else it }
+                        if (yesterdayOverall > 0.0) {
+                            if (todayFilteredAvg > 0.0 && overallTodayAvg > 0.0) {
+                                todayFilteredAvg * (yesterdayOverall / overallTodayAvg)
+                            } else {
+                                yesterdayOverall
+                            }
+                        } else {
+                            val multToday = getCycleMultiplier(getDayOfWeek(0))
+                            val multYesterday = getCycleMultiplier(dayOfWeek)
+                            val estOverall = if (overallTodayAvg > 0.0) {
+                                overallTodayAvg * (multYesterday / multToday)
+                            } else {
+                                185.0 * (multYesterday / multToday)
+                            }
+                            if (todayFilteredAvg > 0.0 && overallTodayAvg > 0.0) {
+                                todayFilteredAvg * (estOverall / overallTodayAvg)
+                            } else {
+                                estOverall
+                            }
+                        }
+                    }
+                }
+                else -> {
+                    val cachedOverall = prefs.getFloat("avg_price_${product.id}_$dateStr", 0f).toDouble()
+                    val overallAvgD = if (cachedOverall > 0.0) {
+                        cachedOverall
+                    } else {
+                        val multToday = getCycleMultiplier(getDayOfWeek(0))
+                        val multD = getCycleMultiplier(dayOfWeek)
+                        if (overallTodayAvg > 0.0) {
+                            overallTodayAvg * (multD / multToday)
+                        } else {
+                            185.0 * (multD / multToday)
+                        }
+                    }
+                    
+                    if (todayFilteredAvg > 0.0 && overallTodayAvg > 0.0) {
+                        todayFilteredAvg * (overallAvgD / overallTodayAvg)
+                    } else {
+                        overallAvgD
+                    }
+                }
+            }
+            
+            val roundedPrice = if (price > 0.0) {
+                String.format(Locale.US, "%.1f", price).toDoubleOrNull() ?: price
+            } else {
+                185.0
+            }
+            list.add(roundedPrice)
+        }
+        list
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = List(7) { 185.0 }
+    )
 
     // Computed / Filtered State for UI
     val filteredStations: StateFlow<List<FuelStation>> = combine(

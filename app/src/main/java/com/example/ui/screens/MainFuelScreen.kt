@@ -3,6 +3,9 @@ package com.example.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.location.Location
+import java.util.Calendar
+import java.util.TimeZone
+import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.util.Log
@@ -37,7 +40,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -75,6 +80,28 @@ fun MainFuelScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
     val stats by viewModel.pricingStats.collectAsState()
+    val trendPrices by viewModel.trendPrices.collectAsState()
+    val trendLabels = remember {
+        val labels = mutableListOf<String>()
+        val tz = TimeZone.getTimeZone("Australia/Perth")
+        for (i in -6..-1) {
+            val cal = Calendar.getInstance(tz)
+            cal.add(Calendar.DAY_OF_YEAR, i)
+            val label = when (cal.get(Calendar.DAY_OF_WEEK)) {
+                Calendar.SUNDAY -> "Sun"
+                Calendar.MONDAY -> "Mon"
+                Calendar.TUESDAY -> "Tue"
+                Calendar.WEDNESDAY -> "Wed"
+                Calendar.THURSDAY -> "Thu"
+                Calendar.FRIDAY -> "Fri"
+                Calendar.SATURDAY -> "Sat"
+                else -> ""
+            }
+            labels.add(label)
+        }
+        labels.add("Today")
+        labels
+    }
 
     val selectedProduct by viewModel.selectedProduct.collectAsState()
     val selectedDay by viewModel.selectedDay.collectAsState()
@@ -372,6 +399,8 @@ fun MainFuelScreen(
                                 stations = stations,
                                 stats = stats,
                                 selectedProduct = selectedProduct,
+                                trendPrices = trendPrices,
+                                trendLabels = trendLabels,
                                 designStyle = designStyle,
                                 isFoldUnfolded = isFoldUnfolded
                             )
@@ -3197,23 +3226,15 @@ fun TrendsView(
     stations: List<FuelStation>,
     stats: PricingStats,
     selectedProduct: FuelProduct,
+    trendPrices: List<Double>,
+    trendLabels: List<String>,
     designStyle: DesignStyle,
     isFoldUnfolded: Boolean
 ) {
-    // Generate simulated historical prices centered around the current average price.
     val avgPrice = if (stats.average > 0) stats.average else 185.0
-    val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Today")
-    val prices = remember(avgPrice) {
-        listOf(
-            avgPrice - 4.2,
-            avgPrice - 2.5,
-            avgPrice + 1.8,
-            avgPrice + 4.5,
-            avgPrice + 2.1,
-            avgPrice - 0.8,
-            avgPrice
-        ).map { String.format("%.1f", it).toDouble() }
-    }
+    val days = trendLabels
+    val prices = trendPrices
+    var selectedPointIndex by remember { mutableStateOf<Int?>(null) }
     
     val minPrice = prices.minOrNull() ?: 150.0
     val maxPrice = prices.maxOrNull() ?: 210.0
@@ -3288,90 +3309,235 @@ fun TrendsView(
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                Canvas(
+                BoxWithConstraints(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
                 ) {
-                    val width = size.width
-                    val height = size.height
-                    val paddingX = 40f
+                    val widthPx = constraints.maxWidth.toFloat()
+                    val heightPx = constraints.maxHeight.toFloat()
+                    val paddingX = 45f
                     val paddingY = 30f
                     
-                    val chartWidth = width - 2 * paddingX
-                    val chartHeight = height - 2 * paddingY
+                    val chartWidth = widthPx - 2 * paddingX
+                    val chartHeight = heightPx - 2 * paddingY
 
                     val strokeColor = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else Color(0xFF0061A4)
                     val glowColor = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFFFF007F) else Color(0x330061A4)
 
-                    // Draw Grid Lines (Y-Axis)
-                    val gridLines = 4
-                    for (i in 0..gridLines) {
-                        val y = paddingY + chartHeight * (i.toFloat() / gridLines)
-                        drawLine(
-                            color = strokeColor.copy(alpha = 0.1f),
-                            start = androidx.compose.ui.geometry.Offset(paddingX, y),
-                            end = androidx.compose.ui.geometry.Offset(width - paddingX, y),
-                            strokeWidth = 2f
-                        )
-                    }
-
                     // Plot Points & Line
-                    val points = mutableListOf<androidx.compose.ui.geometry.Offset>()
-                    val stepX = chartWidth / (prices.size - 1)
-                    for (i in prices.indices) {
-                        val x = paddingX + i * stepX
-                        val y = paddingY + chartHeight * (1.0 - (prices[i] - minPrice) / priceRange).toFloat()
-                        points.add(androidx.compose.ui.geometry.Offset(x, y))
+                    val points = remember(prices, widthPx, heightPx) {
+                        val pts = mutableListOf<androidx.compose.ui.geometry.Offset>()
+                        if (prices.size > 1) {
+                            val stepX = chartWidth / (prices.size - 1)
+                            for (i in prices.indices) {
+                                val x = paddingX + i * stepX
+                                val y = paddingY + chartHeight * (1.0 - (prices[i] - minPrice) / priceRange).toFloat()
+                                pts.add(androidx.compose.ui.geometry.Offset(x, y))
+                            }
+                        }
+                        pts
                     }
 
-                    // Draw Connection path
-                    val path = androidx.compose.ui.graphics.Path()
-                    path.moveTo(points[0].x, points[0].y)
-                    for (i in 1 until points.size) {
-                        val prev = points[i - 1]
-                        val curr = points[i]
-                        path.cubicTo(
-                            prev.x + stepX / 2f, prev.y,
-                            curr.x - stepX / 2f, curr.y,
-                            curr.x, curr.y
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(prices, points) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val anyPressed = event.changes.any { it.pressed }
+                                        if (anyPressed && prices.size > 1) {
+                                            val position = event.changes.first().position
+                                            val stepX = chartWidth / (prices.size - 1)
+                                            val relativeX = position.x - paddingX
+                                            val index = (relativeX / stepX + 0.5f).toInt().coerceIn(prices.indices)
+                                            selectedPointIndex = index
+                                        } else {
+                                            selectedPointIndex = null
+                                        }
+                                    }
+                                }
+                            }
+                    ) {
+                        // Draw Grid Lines (Y-Axis)
+                        val gridLines = 4
+                        for (i in 0..gridLines) {
+                            val y = paddingY + chartHeight * (i.toFloat() / gridLines)
+                            drawLine(
+                                color = strokeColor.copy(alpha = 0.08f),
+                                start = androidx.compose.ui.geometry.Offset(paddingX, y),
+                                end = androidx.compose.ui.geometry.Offset(widthPx - paddingX, y),
+                                strokeWidth = 2f
+                            )
+                        }
+
+                        if (points.isNotEmpty()) {
+                            // Draw Connection path
+                            val path = androidx.compose.ui.graphics.Path()
+                            path.moveTo(points[0].x, points[0].y)
+                            val stepX = chartWidth / (prices.size - 1)
+                            for (i in 1 until points.size) {
+                                val prev = points[i - 1]
+                                val curr = points[i]
+                                path.cubicTo(
+                                    prev.x + stepX / 2f, prev.y,
+                                    curr.x - stepX / 2f, curr.y,
+                                    curr.x, curr.y
+                                )
+                            }
+                            
+                            drawPath(
+                                path = path,
+                                color = strokeColor,
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 6f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                            )
+
+                            // Draw gradient under the curve
+                            val fillPath = androidx.compose.ui.graphics.Path()
+                            fillPath.addPath(path)
+                            fillPath.lineTo(points.last().x, paddingY + chartHeight)
+                            fillPath.lineTo(points.first().x, paddingY + chartHeight)
+                            fillPath.close()
+                            
+                            drawPath(
+                                path = fillPath,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(strokeColor.copy(alpha = 0.25f), Color.Transparent),
+                                    startY = points.minOf { it.y },
+                                    endY = paddingY + chartHeight
+                                )
+                            )
+
+                            // Draw Normal Points (smaller, subtle)
+                            points.forEachIndexed { idx, pt ->
+                                drawCircle(
+                                    color = strokeColor,
+                                    radius = 6f,
+                                    center = pt
+                                )
+                                drawCircle(
+                                    color = strokeColor.copy(alpha = 0.15f),
+                                    radius = 12f,
+                                    center = pt
+                                )
+                            }
+
+                            // Draw Selected / Hover Pointer Highlight
+                            selectedPointIndex?.let { index ->
+                                if (index in points.indices) {
+                                    val pt = points[index]
+                                    
+                                    // Vertical reference line
+                                    drawLine(
+                                        color = strokeColor.copy(alpha = 0.4f),
+                                        start = androidx.compose.ui.geometry.Offset(pt.x, paddingY),
+                                        end = androidx.compose.ui.geometry.Offset(pt.x, paddingY + chartHeight),
+                                        strokeWidth = 3f,
+                                        pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(12f, 12f), 0f)
+                                    )
+
+                                    // Outer pulsing halo
+                                    drawCircle(
+                                        color = glowColor.copy(alpha = 0.35f),
+                                        radius = 22f,
+                                        center = pt
+                                    )
+                                    
+                                    // Highlight ring
+                                    drawCircle(
+                                        color = strokeColor,
+                                        radius = 10f,
+                                        center = pt
+                                    )
+
+                                    // Center dot
+                                    drawCircle(
+                                        color = Color.White,
+                                        radius = 5f,
+                                        center = pt
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // --- Y-Axis labels (Left Edge) ---
+                    val density = LocalDensity.current
+                    val yLabels = listOf(
+                        maxPrice to 20f,
+                        (maxPrice + minPrice) / 2 to (heightPx / 2f - 10f),
+                        minPrice to (heightPx - 40f)
+                    )
+
+                    yLabels.forEach { (valPrice, offsetPx) ->
+                        val yDp = with(density) { offsetPx.toDp() }
+                        Text(
+                            text = "${String.format(Locale.US, "%.1f", valPrice)}¢",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            modifier = Modifier
+                                .offset(x = 2.dp, y = yDp)
+                                .background(
+                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
                         )
                     }
-                    
-                    drawPath(
-                        path = path,
-                        color = strokeColor,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 6f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-                    )
 
-                    // Draw gradient under the curve
-                    val fillPath = androidx.compose.ui.graphics.Path()
-                    fillPath.addPath(path)
-                    fillPath.lineTo(points.last().x, paddingY + chartHeight)
-                    fillPath.lineTo(points.first().x, paddingY + chartHeight)
-                    fillPath.close()
-                    
-                    drawPath(
-                        path = fillPath,
-                        brush = Brush.verticalGradient(
-                            colors = listOf(strokeColor.copy(alpha = 0.35f), Color.Transparent),
-                            startY = points.minOf { it.y },
-                            endY = paddingY + chartHeight
-                        )
-                    )
+                    // --- Floating Tooltip Card (Recharts/D3 Style) ---
+                    selectedPointIndex?.let { index ->
+                        if (index in prices.indices && points.isNotEmpty()) {
+                            val pt = points[index]
+                            val price = prices[index]
+                            val day = days[index]
 
-                    // Draw Glowing Points
-                    points.forEachIndexed { idx, pt ->
-                        drawCircle(
-                            color = strokeColor,
-                            radius = 8f,
-                            center = pt
-                        )
-                        drawCircle(
-                            color = glowColor,
-                            radius = 16f,
-                            center = pt
-                        )
+                            val tooltipWidthDp = 100.dp
+                            val tooltipHeightDp = 58.dp
+
+                            val ptXDp = with(density) { pt.x.toDp() }
+                            val ptYDp = with(density) { pt.y.toDp() }
+
+                            // Center horizontally above point, but constrain within boundaries
+                            val tooltipLeft = (ptXDp - tooltipWidthDp / 2).coerceIn(4.dp, this.maxWidth - tooltipWidthDp - 4.dp)
+                            val tooltipTop = (ptYDp - tooltipHeightDp - 12.dp).coerceIn(4.dp, this.maxHeight - tooltipHeightDp - 4.dp)
+
+                            Card(
+                                modifier = Modifier
+                                    .size(width = tooltipWidthDp, height = tooltipHeightDp)
+                                    .offset(x = tooltipLeft, y = tooltipTop),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.95f)
+                                ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                                border = BorderStroke(1.dp, strokeColor.copy(alpha = 0.4f))
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(6.dp),
+                                    verticalArrangement = Arrangement.Center,
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = day,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.inverseSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${String.format(Locale.US, "%.1f", price)}¢",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -3379,15 +3545,16 @@ fun TrendsView(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
+                        .padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    days.forEach { dayName ->
+                    days.forEachIndexed { i, dayName ->
+                        val isSelected = selectedPointIndex == i
                         Text(
                             text = dayName,
                             fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
