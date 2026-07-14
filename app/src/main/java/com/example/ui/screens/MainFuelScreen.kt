@@ -65,6 +65,7 @@ fun MainFuelScreen(
     var selectedTab by remember { mutableIntStateOf(2) } // 0 = Trends, 1 = My Trip, 2 = Near Me (Default Map), 3 = Favorites, 4 = Settings
     var activeStationForDetails by remember { mutableStateOf<FuelStation?>(null) }
     var showThemeSettings by remember { mutableStateOf(false) }
+    var showFuelWatchInfoDialog by remember { mutableStateOf(false) }
     var isMapView by remember { mutableStateOf(true) }
     var isProductMenuExpanded by remember { mutableStateOf(false) }
 
@@ -79,6 +80,8 @@ fun MainFuelScreen(
     val selectedDay by viewModel.selectedDay.collectAsState()
     val selectedBrand by viewModel.selectedBrand.collectAsState()
     val selectedSuburb by viewModel.selectedSuburb.collectAsState()
+    val tripStartSuburb by viewModel.tripStartSuburb.collectAsState()
+    val tripEndSuburb by viewModel.tripEndSuburb.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val sortBy by viewModel.sortBy.collectAsState()
 
@@ -222,6 +225,16 @@ fun MainFuelScreen(
                 },
                 actions = {
                     IconButton(
+                        onClick = { showFuelWatchInfoDialog = true },
+                        modifier = Modifier.testTag("info_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "WA Fuel Watch Info",
+                            tint = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    IconButton(
                         onClick = { viewModel.refreshFuelPrices() },
                         modifier = Modifier.testTag("refresh_button")
                     ) {
@@ -303,10 +316,8 @@ fun MainFuelScreen(
                 if (selectedTab == 2) {
                     StatsAndQuickFiltersHeader(
                         stats = stats,
-                        selectedProduct = selectedProduct,
                         selectedDay = selectedDay,
                         isPublished = viewModel.isTomorrowPricesPublished,
-                        onProductChange = { viewModel.setProduct(it) },
                         onDayChange = { viewModel.setDay(it) }
                     )
                 }
@@ -361,12 +372,11 @@ fun MainFuelScreen(
                                 stations = stations,
                                 stats = stats,
                                 selectedProduct = selectedProduct,
-                                onProductChange = { viewModel.setProduct(it) },
                                 designStyle = designStyle,
                                 isFoldUnfolded = isFoldUnfolded
                             )
                             1 -> MyTripView(
-                                stations = stations,
+                                stations = allLoadedStations,
                                 suburbs = viewModel.allSuburbs.collectAsState().value,
                                 designStyle = designStyle,
                                 onStationClick = { activeStationForDetails = it },
@@ -374,7 +384,11 @@ fun MainFuelScreen(
                                 favoriteIds = favoriteIds,
                                 onFavoriteToggle = { viewModel.toggleFavorite(it) },
                                 userLocation = viewModel.userLocation.collectAsState().value,
-                                onGpsClick = { viewModel.updateUserLocation() }
+                                onGpsClick = { viewModel.updateUserLocation() },
+                                startSuburb = tripStartSuburb,
+                                endSuburb = tripEndSuburb,
+                                onStartSuburbChange = { viewModel.setTripStartSuburb(it) },
+                                onEndSuburbChange = { viewModel.setTripEndSuburb(it) }
                             )
                             2 -> NearMeView(
                                 stations = stations,
@@ -442,6 +456,40 @@ fun MainFuelScreen(
                     onClose = { showThemeSettings = false }
                 )
             }
+
+            if (showFuelWatchInfoDialog) {
+                AlertDialog(
+                    onDismissRequest = { showFuelWatchInfoDialog = false },
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "WA FuelWatch Rule",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    text = {
+                        Text(
+                            text = "WA Law requires retail fuel outlets to lock and announce tomorrow's prices at exactly 2:30 PM (AWST) daily. Our 'Tomorrow' toggle allows you to see upcoming rates so you can decide whether it is best to refuel today or wait until tomorrow to save.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showFuelWatchInfoDialog = false }) {
+                            Text("Got it")
+                        }
+                    }
+                )
+            }
         }
     }
 }
@@ -450,10 +498,8 @@ fun MainFuelScreen(
 @Composable
 fun StatsAndQuickFiltersHeader(
     stats: PricingStats,
-    selectedProduct: FuelProduct,
     selectedDay: String,
     isPublished: Boolean,
-    onProductChange: (FuelProduct) -> Unit,
     onDayChange: (String) -> Unit
 ) {
     Card(
@@ -469,24 +515,6 @@ fun StatsAndQuickFiltersHeader(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Product Selection (Scrollable Row)
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(FuelProduct.values()) { prod ->
-                    FilterChip(
-                        selected = selectedProduct == prod,
-                        onClick = { onProductChange(prod) },
-                        label = { Text(prod.displayName) },
-                        leadingIcon = if (selectedProduct == prod) {
-                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                        } else null,
-                        modifier = Modifier.testTag("chip_product_${prod.name.lowercase()}")
-                    )
-                }
-            }
-
             // Day selector + metrics
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1067,7 +1095,8 @@ fun FuelMapView(
     onStationClick: (FuelStation) -> Unit,
     userLocation: Location? = null,
     onGpsClick: (() -> Unit)? = null,
-    selectedSuburb: String = ""
+    selectedSuburb: String = "",
+    routeStations: List<FuelStation> = emptyList()
 ) {
     val context = LocalContext.current
     val isDark = MaterialTheme.colorScheme.background.red < 0.5f
@@ -1096,6 +1125,22 @@ fun FuelMapView(
     LaunchedEffect(selectedSuburb) {
         if (selectedSuburb.isNotBlank()) {
             webViewRef?.evaluateJavascript("centerOnSuburb('$selectedSuburb');", null)
+        }
+    }
+
+    // Serialize route coordinates into lightweight JSON array for injecting into JS Leaflet map
+    val routePointsJson = remember(routeStations) {
+        val list = routeStations.map { s ->
+            "[ ${s.latitude}, ${s.longitude} ]"
+        }
+        "[ ${list.joinToString(", ")} ]"
+    }
+
+    LaunchedEffect(routePointsJson) {
+        if (routeStations.isNotEmpty()) {
+            webViewRef?.evaluateJavascript("drawRoute($routePointsJson);", null)
+        } else {
+            webViewRef?.evaluateJavascript("drawRoute([]);", null)
         }
     }
 
@@ -1511,6 +1556,51 @@ fun FuelMapView(
                     }
                 }
 
+                window.routePolyline = null;
+                function drawRoute(latLngs) {
+                    if (!window.mapInstance || typeof L === 'undefined') return;
+                    if (window.routePolyline) {
+                        window.mapInstance.removeLayer(window.routePolyline);
+                        window.routePolyline = null;
+                    }
+                    if (!latLngs || latLngs.length < 2) return;
+                    
+                    var routeColor = '#0061A4';
+                    var routeWeight = 5;
+                    var styleName = '$designStyle';
+                    if (styleName === 'FUTURISTIC') {
+                        routeColor = '#00F0FF';
+                        routeWeight = 6;
+                    } else if (styleName === 'NEO_BRUTALISM') {
+                        routeColor = '#000000';
+                        routeWeight = 8;
+                    } else if (styleName === 'MATERIAL_EXPERIENCE') {
+                        routeColor = '#6366F1';
+                        routeWeight = 6;
+                    } else if (styleName === 'IOS_26_GLASS') {
+                        routeColor = '#EC4899';
+                        routeWeight = 5;
+                    } else if (styleName === 'GLASSMORPHIC') {
+                        routeColor = '#818CF8';
+                        routeWeight = 5;
+                    }
+                    
+                    window.routePolyline = L.polyline(latLngs, {
+                        color: routeColor,
+                        weight: routeWeight,
+                        opacity: 0.85,
+                        lineJoin: 'round'
+                    }).addTo(window.mapInstance);
+                    
+                    try {
+                        var bounds = L.latLngBounds(latLngs);
+                        window.mapInstance.fitBounds(bounds, { padding: [50, 50] });
+                        window.hasSetInitialView = true;
+                    } catch (e) {
+                        console.error(e);
+                    }
+                }
+
                 function loadMarkers(stations) {
                     window.allStations = stations;
                     window.stationsData = stations;
@@ -1572,7 +1662,9 @@ fun FuelMapView(
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             evaluateJavascript("loadMarkers($stationsJson);", null)
-                            if (selectedSuburb.isNotBlank()) {
+                            if (routeStations.isNotEmpty()) {
+                                evaluateJavascript("drawRoute($routePointsJson);", null)
+                            } else if (selectedSuburb.isNotBlank()) {
                                 evaluateJavascript("centerOnSuburb('$selectedSuburb');", null)
                             }
                             userLocation?.let { loc ->
@@ -2422,7 +2514,7 @@ fun SettingsAndInfoView(
                             }
 
                             Text(
-                                text = "Switch between five unique handcrafted visual designs. True craftsmanship in every layout!",
+                                text = "Switch between four unique handcrafted visual designs. True craftsmanship in every layout!",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -2432,7 +2524,6 @@ fun SettingsAndInfoView(
                             val stylesList = listOf(
                                 Triple(DesignStyle.MATERIAL_3, "Modern Material 3", "Clean standard layout, smooth outlines and default shapes."),
                                 Triple(DesignStyle.GLASSMORPHIC, "iOS Glassmorphism", "Elegant frosted glass transparency, double outlines and soft pastel backgrounds."),
-                                Triple(DesignStyle.FUTURISTIC, "Cyberpunk Neon", "High-contrast dark-space grid layout with intense cyan neon glows and mono typography."),
                                 Triple(DesignStyle.MATERIAL_EXPERIENCE, "Material Experience", "Vibrant, hyper-polished Material 3 experience with rich gradients, rounded elements, and dynamic contrast."),
                                 Triple(DesignStyle.IOS_26_GLASS, "iOS 26 Glass", "Premium next-gen glassmorphism with ultra-blurred backdrops, frosted translucent panels, and vibrant accent boundaries.")
                             )
@@ -2636,35 +2727,11 @@ fun SettingsAndInfoView(
                         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
                     ) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.secondary
-                                )
-                                Text(
-                                    text = "Western Australia FuelWatch Rule",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-
-                            Text(
-                                text = "WA Law requires retail fuel outlets to lock and announce tomorrow's prices at exactly 2:30 PM (AWST) daily. Our 'Tomorrow' toggle allows you to see upcoming rates so you can decide when is best to refuel.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
-                            Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
-
                             Text(
                                 text = "Map Color Pin Legend",
                                 fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
 
                             // Cheap
@@ -2814,7 +2881,7 @@ fun SettingsAndInfoView(
                         }
 
                         Text(
-                            text = "Switch between five unique handcrafted visual designs. True craftsmanship in every layout!",
+                            text = "Switch between four unique handcrafted visual designs. True craftsmanship in every layout!",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -2824,7 +2891,6 @@ fun SettingsAndInfoView(
                         val stylesList = listOf(
                             Triple(DesignStyle.MATERIAL_3, "Modern Material 3", "Clean standard layout, smooth outlines and default shapes."),
                             Triple(DesignStyle.GLASSMORPHIC, "iOS Glassmorphism", "Elegant frosted glass transparency, double outlines and soft pastel backgrounds."),
-                            Triple(DesignStyle.FUTURISTIC, "Cyberpunk Neon", "High-contrast dark-space grid layout with intense cyan neon glows and mono typography."),
                             Triple(DesignStyle.MATERIAL_EXPERIENCE, "Material Experience", "Vibrant, hyper-polished Material 3 experience with rich gradients, rounded elements, and dynamic contrast."),
                             Triple(DesignStyle.IOS_26_GLASS, "iOS 26 Glass", "Premium next-gen glassmorphism with ultra-blurred backdrops, frosted translucent panels, and vibrant accent boundaries.")
                         )
@@ -3020,35 +3086,11 @@ fun SettingsAndInfoView(
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.secondary
-                            )
-                            Text(
-                                text = "Western Australia FuelWatch Rule",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        Text(
-                            text = "WA Law requires retail fuel outlets to lock and announce tomorrow's prices at exactly 2:30 PM (AWST) daily. Our 'Tomorrow' toggle allows you to see upcoming rates so you can decide when is best to refuel.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
-
                         Text(
                             text = "Map Color Pin Legend",
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
 
                         // Cheap
@@ -3155,7 +3197,6 @@ fun TrendsView(
     stations: List<FuelStation>,
     stats: PricingStats,
     selectedProduct: FuelProduct,
-    onProductChange: (FuelProduct) -> Unit,
     designStyle: DesignStyle,
     isFoldUnfolded: Boolean
 ) {
@@ -3177,7 +3218,7 @@ fun TrendsView(
     val minPrice = prices.minOrNull() ?: 150.0
     val maxPrice = prices.maxOrNull() ?: 210.0
     val priceRange = if (maxPrice - minPrice > 0) maxPrice - minPrice else 10.0
-
+ 
     // High quality dynamic advice text based on current price cycles
     val isCheapestNow = avgPrice < (minPrice + priceRange * 0.35)
     val adviceTitle = if (isCheapestNow) "Advice: FILL UP NOW" else "Advice: WAIT IF POSSIBLE"
@@ -3188,27 +3229,8 @@ fun TrendsView(
     }
     val adviceColor = if (isCheapestNow) Color(0xFF2E7D32) else Color(0xFFEF6C00)
     val adviceIcon = if (isCheapestNow) Icons.Default.CheckCircle else Icons.Default.Warning
-
+ 
     // Shared content composables to prevent duplicate definitions
-    val productSelector = @Composable {
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            items(FuelProduct.values()) { prod ->
-                FilterChip(
-                    selected = selectedProduct == prod,
-                    onClick = { onProductChange(prod) },
-                    label = { Text(prod.displayName) },
-                    leadingIcon = if (selectedProduct == prod) {
-                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                    } else null,
-                    modifier = Modifier.testTag("trends_chip_${prod.name.lowercase()}")
-                )
-            }
-        }
-    }
-
     val adviceCard = @Composable {
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -3483,7 +3505,6 @@ fun TrendsView(
                     .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                productSelector()
                 adviceCard()
                 priceTrendGraph()
             }
@@ -3507,7 +3528,6 @@ fun TrendsView(
                 .padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            productSelector()
             adviceCard()
             priceTrendGraph()
             weeklyMetricsCard()
@@ -3528,11 +3548,12 @@ fun MyTripView(
     favoriteIds: Set<String>,
     onFavoriteToggle: (FuelStation) -> Unit,
     userLocation: Location?,
-    onGpsClick: () -> Unit
+    onGpsClick: () -> Unit,
+    startSuburb: String,
+    endSuburb: String,
+    onStartSuburbChange: (String) -> Unit,
+    onEndSuburbChange: (String) -> Unit
 ) {
-    var startSuburb by remember { mutableStateOf("PERTH") }
-    var endSuburb by remember { mutableStateOf("MANDURAH") }
-    
     var isStartSearchOpen by remember { mutableStateOf(false) }
     var isEndSearchOpen by remember { mutableStateOf(false) }
 
@@ -3762,7 +3783,8 @@ fun MyTripView(
                             designStyle = designStyle,
                             onStationClick = onStationClick,
                             userLocation = userLocation,
-                            onGpsClick = onGpsClick
+                            onGpsClick = onGpsClick,
+                            routeStations = stationsOnRoute
                         )
                     }
                 }
@@ -3831,7 +3853,8 @@ fun MyTripView(
                             designStyle = designStyle,
                             onStationClick = onStationClick,
                             userLocation = userLocation,
-                            onGpsClick = onGpsClick
+                            onGpsClick = onGpsClick,
+                            routeStations = stationsOnRoute
                         )
                     }
                 }
@@ -3863,7 +3886,7 @@ fun MyTripView(
             title = "Select Start Suburb",
             suburbs = suburbs,
             onSelect = {
-                startSuburb = it
+                onStartSuburbChange(it)
                 isStartSearchOpen = false
             },
             onDismiss = { isStartSearchOpen = false }
@@ -3875,7 +3898,7 @@ fun MyTripView(
             title = "Select End Suburb",
             suburbs = suburbs,
             onSelect = {
-                endSuburb = it
+                onEndSuburbChange(it)
                 isEndSearchOpen = false
             },
             onDismiss = { isEndSearchOpen = false }

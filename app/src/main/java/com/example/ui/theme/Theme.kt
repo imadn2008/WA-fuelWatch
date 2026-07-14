@@ -74,6 +74,22 @@ fun getThemeColors(themeColor: ThemeColor, darkTheme: Boolean): Pair<Color, Colo
             if (darkTheme) Pair(Color(0xFFFFB4AB), Color(0xFF93000A))
             else Pair(Color(0xFFBA1A1A), Color(0xFFFFDAD6))
         }
+        ThemeColor.TEAL -> {
+            if (darkTheme) Pair(Color(0xFF80CBC4), Color(0xFF004D40))
+            else Pair(Color(0xFF00796B), Color(0xFFE0F2F1))
+        }
+        ThemeColor.AMBER -> {
+            if (darkTheme) Pair(Color(0xFFFFD54F), Color(0xFF5D4037))
+            else Pair(Color(0xFFF57C00), Color(0xFFFFF8E1))
+        }
+        ThemeColor.ROSE -> {
+            if (darkTheme) Pair(Color(0xFFF48FB1), Color(0xFF880E4F))
+            else Pair(Color(0xFFD81B60), Color(0xFFFCE4EC))
+        }
+        ThemeColor.SLATE -> {
+            if (darkTheme) Pair(Color(0xFFCFD8DC), Color(0xFF37474F))
+            else Pair(Color(0xFF455A64), Color(0xFFECEFF1))
+        }
     }
 }
 

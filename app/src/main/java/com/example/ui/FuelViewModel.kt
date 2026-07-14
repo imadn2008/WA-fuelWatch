@@ -22,11 +22,11 @@ enum class AppTheme {
 }
 
 enum class DesignStyle {
-    MATERIAL_3, GLASSMORPHIC, FUTURISTIC, MATERIAL_EXPERIENCE, IOS_26_GLASS
+    MATERIAL_3, GLASSMORPHIC, FUTURISTIC, MATERIAL_EXPERIENCE, IOS_26_GLASS, NEO_BRUTALISM, CARBON_DARK
 }
 
 enum class ThemeColor {
-    BLUE, GREEN, ORANGE, PURPLE, RED
+    BLUE, GREEN, ORANGE, PURPLE, RED, TEAL, AMBER, ROSE, SLATE
 }
 
 class FuelViewModel(application: Application) : AndroidViewModel(application) {
@@ -91,6 +91,20 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _selectedSuburb = MutableStateFlow("PERTH") // Default to Perth
     val selectedSuburb: StateFlow<String> = _selectedSuburb.asStateFlow()
+
+    private val _tripStartSuburb = MutableStateFlow("PERTH")
+    val tripStartSuburb: StateFlow<String> = _tripStartSuburb.asStateFlow()
+
+    private val _tripEndSuburb = MutableStateFlow("MANDURAH")
+    val tripEndSuburb: StateFlow<String> = _tripEndSuburb.asStateFlow()
+
+    fun setTripStartSuburb(suburb: String) {
+        _tripStartSuburb.value = suburb
+    }
+
+    fun setTripEndSuburb(suburb: String) {
+        _tripEndSuburb.value = suburb
+    }
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
