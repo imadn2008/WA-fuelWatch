@@ -67,12 +67,14 @@ fun MainFuelScreen(
     viewModel: FuelViewModel,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableIntStateOf(2) } // 0 = Trends, 1 = My Trip, 2 = Near Me (Default Map), 3 = Favorites, 4 = Settings
+    val selectedTab by viewModel.selectedTab.collectAsState() // 0 = Trends, 1 = My Trip, 2 = Near Me (Default Map), 3 = Favorites, 4 = Settings
     var activeStationForDetails by remember { mutableStateOf<FuelStation?>(null) }
     var showThemeSettings by remember { mutableStateOf(false) }
     var showFuelWatchInfoDialog by remember { mutableStateOf(false) }
     var isMapView by remember { mutableStateOf(true) }
     var isProductMenuExpanded by remember { mutableStateOf(false) }
+    var activeStationForBuiltInNav by remember { mutableStateOf<FuelStation?>(null) }
+    var showNavigationSelectorForStation by remember { mutableStateOf<FuelStation?>(null) }
 
     val stations by viewModel.filteredStations.collectAsState()
     val favorites by viewModel.favoriteStations.collectAsState()
@@ -146,8 +148,74 @@ fun MainFuelScreen(
         else -> Modifier.border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f))
     }
 
-    Scaffold(
-        topBar = {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val isFoldUnfolded = maxWidth >= 600.dp
+
+        Row(modifier = Modifier.fillMaxSize()) {
+            if (isFoldUnfolded) {
+                NavigationRail(
+                    containerColor = appBarContainerColor,
+                    modifier = Modifier.then(appBarBorderModifier).fillMaxHeight()
+                ) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    IconButton(onClick = {}) {
+                        Icon(
+                            imageVector = Icons.Filled.LocalGasStation,
+                            contentDescription = null,
+                            tint = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    NavigationRailItem(
+                        selected = selectedTab == 0,
+                        onClick = { viewModel.setSelectedTab(0) },
+                        icon = { Icon(Icons.Default.TrendingUp, contentDescription = "Trends") },
+                        label = { Text("Trends", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
+                        modifier = Modifier.testTag("tab_trends")
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    NavigationRailItem(
+                        selected = selectedTab == 1,
+                        onClick = { viewModel.setSelectedTab(1) },
+                        icon = { Icon(Icons.Default.AltRoute, contentDescription = "My Trip") },
+                        label = { Text("My Trip", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
+                        modifier = Modifier.testTag("tab_trip")
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    NavigationRailItem(
+                        selected = selectedTab == 2,
+                        onClick = { viewModel.setSelectedTab(2) },
+                        icon = { Icon(Icons.Default.Place, contentDescription = "Near Me") },
+                        label = { Text("Near Me", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
+                        modifier = Modifier.testTag("tab_near_me")
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    NavigationRailItem(
+                        selected = selectedTab == 3,
+                        onClick = { viewModel.setSelectedTab(3) },
+                        icon = {
+                            Icon(
+                                imageVector = if (selectedTab == 3) Icons.Default.Star else Icons.Default.StarBorder,
+                                contentDescription = "Favorites"
+                            )
+                        },
+                        label = { Text("Favourites", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
+                        modifier = Modifier.testTag("tab_favorites")
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    NavigationRailItem(
+                        selected = selectedTab == 4,
+                        onClick = { viewModel.setSelectedTab(4) },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                        label = { Text("Settings", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
+                        modifier = Modifier.testTag("tab_settings")
+                    )
+                    Spacer(modifier = Modifier.weight(1.3f))
+                }
+            }
+
+            Scaffold(
+                topBar = {
             TopAppBar(
                 navigationIcon = {
                     if (selectedTab == 2) {
@@ -279,66 +347,70 @@ fun MainFuelScreen(
             )
         },
         bottomBar = {
-            NavigationBar(
-                containerColor = appBarContainerColor,
-                tonalElevation = 0.dp,
-                modifier = Modifier.then(appBarBorderModifier)
-            ) {
-                NavigationBarItem(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    icon = { Icon(Icons.Default.TrendingUp, contentDescription = "Trends") },
-                    label = { Text("Trends", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
-                    modifier = Modifier.testTag("tab_trends")
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Default.AltRoute, contentDescription = "My Trip") },
-                    label = { Text("My Trip", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
-                    modifier = Modifier.testTag("tab_trip")
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    icon = { Icon(Icons.Default.Place, contentDescription = "Near Me") },
-                    label = { Text("Near Me", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
-                    modifier = Modifier.testTag("tab_near_me")
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
-                    icon = {
-                        Icon(
-                            imageVector = if (selectedTab == 3) Icons.Default.Star else Icons.Default.StarBorder,
-                            contentDescription = "Favorites"
-                        )
-                    },
-                    label = { Text("Favourites", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
-                    modifier = Modifier.testTag("tab_favorites")
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 4,
-                    onClick = { selectedTab = 4 },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text("Settings", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
-                    modifier = Modifier.testTag("tab_settings")
-                )
+            if (!isFoldUnfolded) {
+                NavigationBar(
+                    containerColor = appBarContainerColor,
+                    tonalElevation = 0.dp,
+                    modifier = Modifier.then(appBarBorderModifier)
+                ) {
+                    NavigationBarItem(
+                        selected = selectedTab == 0,
+                        onClick = { viewModel.setSelectedTab(0) },
+                        icon = { Icon(Icons.Default.TrendingUp, contentDescription = "Trends") },
+                        label = { Text("Trends", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
+                        modifier = Modifier.testTag("tab_trends")
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 1,
+                        onClick = { viewModel.setSelectedTab(1) },
+                        icon = { Icon(Icons.Default.AltRoute, contentDescription = "My Trip") },
+                        label = { Text("My Trip", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
+                        modifier = Modifier.testTag("tab_trip")
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 2,
+                        onClick = { viewModel.setSelectedTab(2) },
+                        icon = { Icon(Icons.Default.Place, contentDescription = "Near Me") },
+                        label = { Text("Near Me", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
+                        modifier = Modifier.testTag("tab_near_me")
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 3,
+                        onClick = { viewModel.setSelectedTab(3) },
+                        icon = {
+                            Icon(
+                                imageVector = if (selectedTab == 3) Icons.Default.Star else Icons.Default.StarBorder,
+                                contentDescription = "Favorites"
+                            )
+                        },
+                        label = { Text("Favourites", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
+                        modifier = Modifier.testTag("tab_favorites")
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 4,
+                        onClick = { viewModel.setSelectedTab(4) },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                        label = { Text("Settings", fontFamily = if (designStyle == DesignStyle.FUTURISTIC) FontFamily.Monospace else FontFamily.Default) },
+                        modifier = Modifier.testTag("tab_settings")
+                    )
+                }
             }
         },
-        modifier = modifier.fillMaxSize()
+        modifier = Modifier.weight(1f).fillMaxHeight()
     ) { innerPadding ->
-        BoxWithConstraints(
+        Box(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
         ) {
-            val isFoldUnfolded = maxWidth >= 600.dp
 
             // Background Canvas based on DesignStyle
             StyledBackground(designStyle = designStyle)
 
             Column(modifier = Modifier.fillMaxSize()) {
+                if (isLoading && stations.isNotEmpty()) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
                 // Today/Tomorrow Quick Filter Header shown for Near Me / Map tab
                 if (selectedTab == 2) {
                     StatsAndQuickFiltersHeader(
@@ -355,7 +427,7 @@ fun MainFuelScreen(
                         .weight(1f)
                         .fillMaxWidth()
                 ) {
-                    if (isLoading) {
+                    if (isLoading && stations.isEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -457,7 +529,26 @@ fun MainFuelScreen(
                                 onDesignStyleSelect = { viewModel.setDesignStyle(it) },
                                 isFoldUnfolded = isFoldUnfolded,
                                 currentThemeColor = themeColor,
-                                onThemeColorSelect = { viewModel.setThemeColor(it) }
+                                onThemeColorSelect = { viewModel.setThemeColor(it) },
+                                priceAlertsEnabled = viewModel.priceAlertsEnabled.collectAsState().value,
+                                onPriceAlertsEnabledChange = { viewModel.setPriceAlertsEnabled(it) },
+                                priceAlertThreshold = viewModel.priceAlertThreshold.collectAsState().value,
+                                onPriceAlertThresholdChange = { viewModel.setPriceAlertThreshold(it) },
+                                priceAlertSuburb = viewModel.priceAlertSuburb.collectAsState().value,
+                                onPriceAlertSuburbChange = { viewModel.setPriceAlertSuburb(it) },
+                                priceAlertProduct = viewModel.priceAlertProduct.collectAsState().value,
+                                onPriceAlertProductSelect = { viewModel.setPriceAlertProduct(it) },
+                                allSuburbs = viewModel.allSuburbs.collectAsState().value,
+                                userId = viewModel.userId.collectAsState().value,
+                                userName = viewModel.userName.collectAsState().value,
+                                onUserNameChange = { viewModel.setUserName(it) },
+                                userCarType = viewModel.userCarType.collectAsState().value,
+                                onUserCarTypeChange = { viewModel.setUserCarType(it) },
+                                userInstalledAt = viewModel.userInstalledAt.collectAsState().value,
+                                selectedFuelProduct = viewModel.selectedProduct.collectAsState().value,
+                                onSelectedFuelProductSelect = { viewModel.setProduct(it) },
+                                selectedSuburb = viewModel.selectedSuburb.collectAsState().value,
+                                onSelectedSuburbChange = { viewModel.setSuburb(it) }
                             )
                         }
                     }
@@ -472,7 +563,70 @@ fun MainFuelScreen(
                     station = station.copy(price = livePrice),
                     isFavorite = favoriteIds.contains(station.id),
                     onClose = { activeStationForDetails = null },
-                    onFavoriteToggle = { viewModel.toggleFavorite(station) }
+                    onFavoriteToggle = { viewModel.toggleFavorite(station) },
+                    onNavigateClick = {
+                        showNavigationSelectorForStation = it
+                        activeStationForDetails = null
+                    }
+                )
+            }
+
+            // Navigation Selection Dialog (Built-In GPS vs 3rd Party)
+            showNavigationSelectorForStation?.let { station ->
+                val context = LocalContext.current
+                AlertDialog(
+                    onDismissRequest = { showNavigationSelectorForStation = null },
+                    title = { Text("Choose Navigator", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Text("Would you like to use the offline built-in turn-by-turn navigator, or open a 3rd party mapping app like Google Maps?")
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                activeStationForBuiltInNav = station
+                                showNavigationSelectorForStation = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Text("Built-In GPS")
+                        }
+                    },
+                    dismissButton = {
+                        Button(
+                            onClick = {
+                                try {
+                                    val gmmIntentUri = Uri.parse("google.navigation:q=${station.latitude},${station.longitude}")
+                                    val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri).apply {
+                                        setPackage("com.google.android.apps.maps")
+                                    }
+                                    context.startActivity(mapIntent)
+                                } catch (e: Exception) {
+                                    try {
+                                        val fallbackUri = Uri.parse("geo:${station.latitude},${station.longitude}?q=${Uri.encode(station.tradingName + ", " + station.address)}")
+                                        val fallbackIntent = Intent(Intent.ACTION_VIEW, fallbackUri)
+                                        context.startActivity(fallbackIntent)
+                                    } catch (err: Exception) {
+                                        Log.e("Navigation", "Error fallback routing: ${err.message}")
+                                    }
+                                }
+                                showNavigationSelectorForStation = null
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        ) {
+                            Text("3rd Party Map")
+                        }
+                    }
+                )
+            }
+
+            // Built-In Turn-by-Turn Navigator Screen
+            activeStationForBuiltInNav?.let { station ->
+                BuiltInNavigatorScreen(
+                    station = station,
+                    onClose = { activeStationForBuiltInNav = null }
                 )
             }
 
@@ -518,6 +672,224 @@ fun MainFuelScreen(
                         }
                     }
                 )
+            }
+        }
+    }
+}
+}
+}
+
+@Composable
+fun BuiltInNavigatorScreen(
+    station: FuelStation,
+    onClose: () -> Unit
+) {
+    var stepIndex by remember { mutableStateOf(0) }
+    var tripProgress by remember { mutableStateOf(0f) }
+    var speed by remember { mutableStateOf(60) }
+    var distanceRemaining by remember { mutableStateOf(5.8f) }
+    var isArrived by remember { mutableStateOf(false) }
+
+    val steps = remember(station) {
+        listOf(
+            "GPS Connected. Turn right onto Stirling Highway.",
+            "Continue on Stirling Hwy for 2.1 km.",
+            "Take the 2nd exit at the roundabout onto Canning Highway.",
+            "Keep left and continue on Canning Hwy for 1.8 km.",
+            "Turn left onto ${station.address}.",
+            "Arriving at ${station.tradingName} on your left. Stop safely."
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        while (tripProgress < 1f) {
+            kotlinx.coroutines.delay(2000)
+            tripProgress += 0.166f
+            stepIndex = (tripProgress * (steps.size - 1)).toInt().coerceIn(0, steps.size - 1)
+            distanceRemaining = (5.8f * (1f - tripProgress)).coerceAtLeast(0f)
+            speed = (50..70).random()
+            if (tripProgress >= 0.95f) {
+                tripProgress = 1f
+                isArrived = true
+                speed = 0
+                distanceRemaining = 0f
+                stepIndex = steps.size - 1
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF070A13))
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawCircle(
+                color = Color(0xFF00F0FF).copy(alpha = 0.04f),
+                radius = size.minDimension / 1.5f,
+                center = center
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131A2E).copy(alpha = 0.85f)),
+                border = BorderStroke(1.dp, Color(0xFF00F0FF).copy(alpha = 0.2f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(Color(0xFF00F0FF).copy(alpha = 0.15f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isArrived) Icons.Default.CheckCircle else Icons.Default.Navigation,
+                            contentDescription = null,
+                            tint = if (isArrived) Color(0xFF22C55E) else Color(0xFF00F0FF),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (isArrived) "Arrived!" else "In-App Built-In GPS",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "To: ${station.tradingName}",
+                            fontSize = 14.sp,
+                            color = Color.LightGray,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(180.dp)
+                        .border(4.dp, Color(0xFF00F0FF).copy(alpha = 0.15f), CircleShape)
+                        .padding(8.dp)
+                        .border(2.dp, Color(0xFF00F0FF).copy(alpha = 0.4f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "$speed",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 48.sp,
+                            color = if (isArrived) Color(0xFF22C55E) else Color(0xFF00F0FF)
+                        )
+                        Text(
+                            text = "km/h",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Gray
+                        )
+                    }
+                }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E294B)),
+                    border = BorderStroke(1.dp, Color(0xFF00F0FF).copy(alpha = 0.3f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = steps[stepIndex],
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp,
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+                        
+                        LinearProgressIndicator(
+                            progress = tripProgress,
+                            color = Color(0xFF00F0FF),
+                            trackColor = Color.White.copy(alpha = 0.1f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                        )
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Distance", fontSize = 12.sp, color = Color.Gray)
+                        Text(
+                            text = String.format("%.1f km", distanceRemaining),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color.White
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("ETA", fontSize = 12.sp, color = Color.Gray)
+                        Text(
+                            text = if (isArrived) "0 mins" else "${(distanceRemaining * 1.5).toInt() + 1} mins",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color.White
+                        )
+                    }
+                }
+
+                Button(
+                    onClick = onClose,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = if (isArrived) "Close" else "Exit Navigation",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = Color.White
+                    )
+                }
             }
         }
     }
@@ -1731,7 +2103,9 @@ fun FuelMapView(
                     webViewInstance.loadDataWithBaseURL("file:///android_asset/", mapHtml, "text/html", "UTF-8", null)
                 } else {
                     webViewInstance.evaluateJavascript("loadMarkers($stationsJson);", null)
-                    if (selectedSuburb.isNotBlank()) {
+                    if (routeStations.isNotEmpty()) {
+                        webViewInstance.evaluateJavascript("drawRoute($routePointsJson);", null)
+                    } else if (selectedSuburb.isNotBlank()) {
                         webViewInstance.evaluateJavascript("centerOnSuburb('$selectedSuburb');", null)
                     }
                     userLocation?.let { loc ->
@@ -1908,7 +2282,8 @@ fun StationDetailsSheet(
     station: FuelStation,
     isFavorite: Boolean,
     onClose: () -> Unit,
-    onFavoriteToggle: () -> Unit
+    onFavoriteToggle: () -> Unit,
+    onNavigateClick: (FuelStation) -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -2046,24 +2421,7 @@ fun StationDetailsSheet(
                     }
 
                     Button(
-                        onClick = {
-                            try {
-                                val gmmIntentUri = Uri.parse("google.navigation:q=${station.latitude},${station.longitude}")
-                                val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri).apply {
-                                    setPackage("com.google.android.apps.maps")
-                                }
-                                context.startActivity(mapIntent)
-                            } catch (e: Exception) {
-                                try {
-                                    // Fallback to generic geo intent if Google Maps app package is not explicitly handled
-                                    val fallbackUri = Uri.parse("geo:${station.latitude},${station.longitude}?q=${Uri.encode(station.tradingName + ", " + station.address)}")
-                                    val fallbackIntent = Intent(Intent.ACTION_VIEW, fallbackUri)
-                                    context.startActivity(fallbackIntent)
-                                } catch (err: Exception) {
-                                    Log.e("Navigation", "Error fallback routing: ${err.message}")
-                                }
-                            }
-                        },
+                        onClick = { onNavigateClick(station) },
                         modifier = Modifier
                             .weight(1.3f)
                             .height(44.dp)
@@ -2481,9 +2839,41 @@ fun SettingsAndInfoView(
     onDesignStyleSelect: (DesignStyle) -> Unit,
     isFoldUnfolded: Boolean = false,
     currentThemeColor: ThemeColor,
-    onThemeColorSelect: (ThemeColor) -> Unit
+    onThemeColorSelect: (ThemeColor) -> Unit,
+    
+    // Price Alert Settings
+    priceAlertsEnabled: Boolean,
+    onPriceAlertsEnabledChange: (Boolean) -> Unit,
+    priceAlertThreshold: Float,
+    onPriceAlertThresholdChange: (Float) -> Unit,
+    priceAlertSuburb: String,
+    onPriceAlertSuburbChange: (String) -> Unit,
+    priceAlertProduct: FuelProduct,
+    onPriceAlertProductSelect: (FuelProduct) -> Unit,
+    allSuburbs: List<String>,
+
+    // Individual User Metadata Profile Settings
+    userId: String,
+    userName: String,
+    onUserNameChange: (String) -> Unit,
+    userCarType: String,
+    onUserCarTypeChange: (String) -> Unit,
+    userInstalledAt: String,
+    selectedFuelProduct: FuelProduct,
+    onSelectedFuelProductSelect: (FuelProduct) -> Unit,
+    selectedSuburb: String,
+    onSelectedSuburbChange: (String) -> Unit
 ) {
     val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+
+    var showDonationDialog by remember { mutableStateOf(false) }
+
+    if (showDonationDialog) {
+        DonationDialog(
+            onDismiss = { showDonationDialog = false },
+            designStyle = currentDesignStyle
+        )
+    }
 
     if (isFoldUnfolded) {
         // Unfolded Foldable (Dual-Pane) Layout
@@ -2493,7 +2883,7 @@ fun SettingsAndInfoView(
                 .padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Left Pane: Settings selectors (Design Style & Display Theme)
+            // Left Pane: Settings selectors (Design Style, Profile, Display Theme, Alerts)
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
@@ -2503,17 +2893,34 @@ fun SettingsAndInfoView(
                 item {
                     Column(modifier = Modifier.padding(bottom = 8.dp)) {
                         Text(
-                            text = "App Settings & Design",
+                            text = "App Settings & Profile",
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Black,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "Customize themes and visual design styles",
+                            text = "Customize themes, visual styles and manage device metadata",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+
+                // Unified Driver Profile Card (Foldable view)
+                item {
+                    DriverProfileCard(
+                        userId = userId,
+                        userName = userName,
+                        onUserNameChange = onUserNameChange,
+                        userCarType = userCarType,
+                        onUserCarTypeChange = onUserCarTypeChange,
+                        userInstalledAt = userInstalledAt,
+                        selectedFuelProduct = selectedFuelProduct,
+                        onSelectedFuelProductSelect = onSelectedFuelProductSelect,
+                        selectedSuburb = selectedSuburb,
+                        onSelectedSuburbChange = onSelectedSuburbChange,
+                        allSuburbs = allSuburbs
+                    )
                 }
 
                 // Section 1: UI Design Style
@@ -2655,8 +3062,8 @@ fun SettingsAndInfoView(
                     }
                 }
 
-            // Section 2.5: Theme Accent Color Selection
-            item {
+                // Section 2.5: Theme Accent Color Selection (Chunked Multi-row Grid)
+                item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -2687,42 +3094,48 @@ fun SettingsAndInfoView(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceAround,
-                                verticalAlignment = Alignment.CenterVertically
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                ThemeColor.values().forEach { col ->
-                                    val isSelected = currentThemeColor == col
-                                    val mappedColor = getThemeColors(col, isDark).first
-                                    Box(
-                                        modifier = Modifier
-                                            .size(54.dp)
-                                            .clip(CircleShape)
-                                            .background(mappedColor.copy(alpha = if (isSelected) 1f else 0.4f))
-                                            .border(
-                                                width = if (isSelected) 3.dp else 1.dp,
-                                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                                shape = CircleShape
-                                            )
-                                            .clickable { onThemeColorSelect(col) },
-                                        contentAlignment = Alignment.Center
+                                val colorChunks = ThemeColor.values().toList().chunked(7)
+                                colorChunks.forEach { chunk ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceEvenly,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        if (isSelected) {
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = "Selected",
-                                                tint = if (isDark) Color.Black else Color.White,
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                        } else {
+                                        chunk.forEach { col ->
+                                            val isSelected = currentThemeColor == col
+                                            val mappedColor = getThemeColors(col, isDark).first
                                             Box(
                                                 modifier = Modifier
-                                                    .size(8.dp)
-                                                    .background(mappedColor, CircleShape)
-                                            )
+                                                    .size(42.dp)
+                                                    .clip(CircleShape)
+                                                    .background(mappedColor.copy(alpha = if (isSelected) 1f else 0.4f))
+                                                    .border(
+                                                        width = if (isSelected) 3.dp else 1.dp,
+                                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                                        shape = CircleShape
+                                                    )
+                                                    .clickable { onThemeColorSelect(col) },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = "Selected",
+                                                        tint = if (isDark) Color.Black else Color.White,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                } else {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(8.dp)
+                                                            .background(mappedColor, CircleShape)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -2738,15 +3151,78 @@ fun SettingsAndInfoView(
                         }
                     }
                 }
+
+                // Section 2.6: Price Alerts & Notifications
+                item {
+                    PriceAlertSettingsCard(
+                        enabled = priceAlertsEnabled,
+                        onEnabledChange = onPriceAlertsEnabledChange,
+                        threshold = priceAlertThreshold,
+                        onThresholdChange = onPriceAlertThresholdChange,
+                        suburb = priceAlertSuburb,
+                        onSuburbChange = onPriceAlertSuburbChange,
+                        product = priceAlertProduct,
+                        onProductSelect = onPriceAlertProductSelect,
+                        allSuburbs = allSuburbs,
+                        designStyle = currentDesignStyle
+                    )
+                }
             }
 
-            // Right Pane: WA FuelWatch Rule, Map Legend & App Info
+            // Right Pane: WA FuelWatch Rule, Map Legend, App Info, and Donations
             LazyColumn(
                 modifier = Modifier
                     .weight(1.1f)
                     .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // NEW: App Donation Support Card (Foldable view)
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(24.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Favorite,
+                                    contentDescription = null,
+                                    tint = Color(0xFFD81B60),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Text(
+                                    text = "Support Development",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            Text(
+                                text = "WA FuelWatch is a free project. If this app has helped you find cheaper fuel and saved you money, consider sending a small donation to support continuous updates!",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Button(
+                                onClick = { showDonationDialog = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD81B60), contentColor = Color.White)
+                            ) {
+                                Icon(imageVector = Icons.Default.Coffee, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Send a Tip (Donation)", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
                 // Section 3: WA FuelWatch Information & Legend
                 item {
                     Card(
@@ -2849,7 +3325,7 @@ fun SettingsAndInfoView(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "Made for Western Australia Motorists\nData sourced in real-time from FuelWatch WA",
+                            text = "Made by 300MDDA\nMade for Western Australia Motorists\nData sourced in real-time from FuelWatch WA",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             textAlign = TextAlign.Center
@@ -2870,17 +3346,34 @@ fun SettingsAndInfoView(
             item {
                 Column(modifier = Modifier.padding(bottom = 8.dp)) {
                     Text(
-                        text = "App Settings & Design",
+                        text = "App Settings & Profile",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Customize themes, visual styles and read FuelWatch info",
+                        text = "Customize themes, visual styles and manage device metadata",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+
+            // Unified Driver Profile Card (Compact view)
+            item {
+                DriverProfileCard(
+                    userId = userId,
+                    userName = userName,
+                    onUserNameChange = onUserNameChange,
+                    userCarType = userCarType,
+                    onUserCarTypeChange = onUserCarTypeChange,
+                    userInstalledAt = userInstalledAt,
+                    selectedFuelProduct = selectedFuelProduct,
+                    onSelectedFuelProductSelect = onSelectedFuelProductSelect,
+                    selectedSuburb = selectedSuburb,
+                    onSelectedSuburbChange = onSelectedSuburbChange,
+                    allSuburbs = allSuburbs
+                )
             }
 
             // Section 1: UI Design Style
@@ -3022,89 +3515,158 @@ fun SettingsAndInfoView(
                 }
             }
 
-            // Section 2.5: Theme Accent Color Selection
+            // Section 2.5: Theme Accent Color Selection (Chunked Multi-row Grid)
             item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        shape = RoundedCornerShape(24.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ColorLens,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = "Theme Accent Color",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-
-                            Text(
-                                text = "Personalize your experience by selecting one of our high-contrast, beautiful premium color schemes.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(24.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ColorLens,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
                             )
+                            Text(
+                                text = "Theme Accent Color",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceAround,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                ThemeColor.values().forEach { col ->
-                                    val isSelected = currentThemeColor == col
-                                    val mappedColor = getThemeColors(col, isDark).first
-                                    Box(
-                                        modifier = Modifier
-                                            .size(54.dp)
-                                            .clip(CircleShape)
-                                            .background(mappedColor.copy(alpha = if (isSelected) 1f else 0.4f))
-                                            .border(
-                                                width = if (isSelected) 3.dp else 1.dp,
-                                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                                shape = CircleShape
-                                            )
-                                            .clickable { onThemeColorSelect(col) },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (isSelected) {
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = "Selected",
-                                                tint = if (isDark) Color.Black else Color.White,
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .background(mappedColor, CircleShape)
-                                            )
+                        Text(
+                            text = "Personalize your experience by selecting one of our high-contrast, beautiful premium color schemes.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val colorChunks = ThemeColor.values().toList().chunked(7)
+                            colorChunks.forEach { chunk ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    chunk.forEach { col ->
+                                        val isSelected = currentThemeColor == col
+                                        val mappedColor = getThemeColors(col, isDark).first
+                                        Box(
+                                            modifier = Modifier
+                                                .size(42.dp)
+                                                .clip(CircleShape)
+                                                .background(mappedColor.copy(alpha = if (isSelected) 1f else 0.4f))
+                                                .border(
+                                                    width = if (isSelected) 3.dp else 1.dp,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                                    shape = CircleShape
+                                                )
+                                                .clickable { onThemeColorSelect(col) },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "Selected",
+                                                    tint = if (isDark) Color.Black else Color.White,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .background(mappedColor, CircleShape)
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
-                            
-                            Text(
-                                text = "Selected Palette: ${currentThemeColor.name.lowercase().replaceFirstChar { it.uppercase() }}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                        }
+                        
+                        Text(
+                            text = "Selected Palette: ${currentThemeColor.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        )
+                    }
+                }
+            }
+
+            // Section 2.6: Price Alerts & Notifications
+            item {
+                PriceAlertSettingsCard(
+                    enabled = priceAlertsEnabled,
+                    onEnabledChange = onPriceAlertsEnabledChange,
+                    threshold = priceAlertThreshold,
+                    onThresholdChange = onPriceAlertThresholdChange,
+                    suburb = priceAlertSuburb,
+                    onSuburbChange = onPriceAlertSuburbChange,
+                    product = priceAlertProduct,
+                    onProductSelect = onPriceAlertProductSelect,
+                    allSuburbs = allSuburbs,
+                    designStyle = currentDesignStyle
+                )
+            }
+
+            // NEW: App Donation Support Card (Compact view)
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(24.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Favorite,
+                                contentDescription = null,
+                                tint = Color(0xFFD81B60),
+                                modifier = Modifier.size(24.dp)
                             )
+                            Text(
+                                text = "Support Development",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        Text(
+                            text = "WA FuelWatch is a free project. If this app has helped you find cheaper fuel and saved you money, consider sending a small donation to support continuous updates!",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Button(
+                            onClick = { showDonationDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD81B60), contentColor = Color.White)
+                        ) {
+                            Icon(imageVector = Icons.Default.Coffee, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Send a Tip (Donation)", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
+            }
 
             // Section 3: WA FuelWatch Information & Legend
             item {
@@ -3187,7 +3749,7 @@ fun SettingsAndInfoView(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f)
-                            )
+                              )
                         }
                     }
                 }
@@ -3208,11 +3770,312 @@ fun SettingsAndInfoView(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "Made for Western Australia Motorists\nData sourced in real-time from FuelWatch WA",
+                        text = "Made by 300MDDA\nMade for Western Australia Motorists\nData sourced in real-time from FuelWatch WA",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         textAlign = TextAlign.Center
                     )
+                }
+            }
+        }
+    }
+}
+
+// Dialog for App Donation
+@Composable
+fun DonationDialog(
+    onDismiss: () -> Unit,
+    designStyle: DesignStyle
+) {
+    var selectedAmount by remember { mutableStateOf(5) }
+    var donationSuccess by remember { mutableStateOf(false) }
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Favorite,
+                    contentDescription = null,
+                    tint = Color(0xFFD81B60),
+                    modifier = Modifier.size(24.dp)
+                )
+                Text("Support Development", fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                if (!donationSuccess) {
+                    Text(
+                        "Your small tip helps us cover WA FuelWatch API parsing costs, map tile servers, and supports continuous updates. Every coffee counts!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(2, 5, 10, 20).forEach { amount ->
+                            val isSel = selectedAmount == amount
+                            Button(
+                                onClick = { selectedAmount = amount },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isSel) Color(0xFFD81B60) else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(vertical = 8.dp)
+                            ) {
+                                Text("$$amount", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Payment Method", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Google Pay", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Active",
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    Text(
+                        "Selecting $$selectedAmount AUD. Payments are securely simulated.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Success",
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Text(
+                            "Thank You So Much!",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            "Your contribution of $$selectedAmount AUD keeps WA FuelWatch running smoothly for all WA motorists! ❤️",
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (!donationSuccess) {
+                Button(
+                    onClick = { donationSuccess = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) {
+                    Text("Pay with Google Pay", fontWeight = FontWeight.Bold)
+                }
+            } else {
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
+            }
+        },
+        dismissButton = {
+            if (!donationSuccess) {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+            }
+        },
+        shape = RoundedCornerShape(28.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    )
+}
+
+// Inline Driver Profile Configuration Card
+@Composable
+fun DriverProfileCard(
+    userId: String,
+    userName: String,
+    onUserNameChange: (String) -> Unit,
+    userCarType: String,
+    onUserCarTypeChange: (String) -> Unit,
+    userInstalledAt: String,
+    selectedFuelProduct: FuelProduct,
+    onSelectedFuelProductSelect: (FuelProduct) -> Unit,
+    selectedSuburb: String,
+    onSelectedSuburbChange: (String) -> Unit,
+    allSuburbs: List<String>
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(24.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AccountCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    text = "Driver Profile & Vehicle",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Text(
+                text = "Your profile settings are saved locally on this device and personalize your fuel-tracking experience.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Driver Name
+            OutlinedTextField(
+                value = userName,
+                onValueChange = onUserNameChange,
+                label = { Text("Driver Name / Nickname") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                leadingIcon = { Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(18.dp)) }
+            )
+
+            // Vehicle Type
+            OutlinedTextField(
+                value = userCarType,
+                onValueChange = onUserCarTypeChange,
+                label = { Text("Vehicle Type / Car Model") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                leadingIcon = { Icon(Icons.Default.LocalGasStation, null, modifier = Modifier.size(18.dp)) }
+            )
+
+            // Preferred Default Fuel Product dropdown
+            Text("Preferred Default Fuel Product", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            
+            var fuelExpanded by remember { mutableStateOf(false) }
+            Box(modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { fuelExpanded = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(selectedFuelProduct.displayName)
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                    }
+                }
+                DropdownMenu(
+                    expanded = fuelExpanded,
+                    onDismissRequest = { fuelExpanded = false },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    FuelProduct.values().forEach { prod ->
+                        DropdownMenuItem(
+                            text = { Text(prod.displayName) },
+                            onClick = {
+                                onSelectedFuelProductSelect(prod)
+                                fuelExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Preferred Default Suburb selection
+            Text("Preferred Default Suburb", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            
+            var showSuburbSearchDialog by remember { mutableStateOf(false) }
+            OutlinedButton(
+                onClick = { showSuburbSearchDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(selectedSuburb)
+                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+            }
+
+            if (showSuburbSearchDialog) {
+                SuburbSearchTripDialog(
+                    title = "Select Default Suburb",
+                    suburbs = allSuburbs,
+                    onSelect = {
+                        onSelectedSuburbChange(it)
+                        showSuburbSearchDialog = false
+                    },
+                    onDismiss = { showSuburbSearchDialog = false }
+                )
+            }
+
+            // Metadata Footer
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text("Profile ID:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(userId, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text("Installed Since:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(userInstalledAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -3746,6 +4609,13 @@ fun MyTripView(
         }.sortedBy { it.price }
     }
 
+    // Sort route stations geographically along intermediate suburbs for drawing polyline sequentially
+    val routeStationsGeographic = remember(stationsOnRoute, intermediateSuburbs) {
+        intermediateSuburbs.flatMap { suburb ->
+            stationsOnRoute.filter { it.location.equals(suburb, ignoreCase = true) }
+        }
+    }
+
     val cheapestStation = stationsOnRoute.firstOrNull()
 
     // Composable blocks
@@ -3951,7 +4821,7 @@ fun MyTripView(
                             onStationClick = onStationClick,
                             userLocation = userLocation,
                             onGpsClick = onGpsClick,
-                            routeStations = stationsOnRoute
+                            routeStations = routeStationsGeographic
                         )
                     }
                 }
@@ -4021,7 +4891,7 @@ fun MyTripView(
                             onStationClick = onStationClick,
                             userLocation = userLocation,
                             onGpsClick = onGpsClick,
-                            routeStations = stationsOnRoute
+                            routeStations = routeStationsGeographic
                         )
                     }
                 }
@@ -4287,6 +5157,268 @@ fun MetricItem(
         ) {
             Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = color)
+        }
+    }
+}
+
+@Composable
+fun PriceAlertSettingsCard(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    threshold: Float,
+    onThresholdChange: (Float) -> Unit,
+    suburb: String,
+    onSuburbChange: (String) -> Unit,
+    product: FuelProduct,
+    onProductSelect: (FuelProduct) -> Unit,
+    allSuburbs: List<String>,
+    designStyle: DesignStyle
+) {
+    var isSuburbMenuExpanded by remember { mutableStateOf(false) }
+    var isProductMenuExpanded by remember { mutableStateOf(false) }
+    var suburbSearchQuery by remember { mutableStateOf("") }
+    
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+
+    Card(
+        modifier = Modifier.fillMaxWidth().testTag("price_alert_card"),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(24.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            // Header Row
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.NotificationsActive,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Price Alerts & Notifications",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Text(
+                text = "Get real-time system notifications on your device when fuel prices drop below your set threshold in your target suburb.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Switch Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent)
+                    .clickable { onEnabledChange(!enabled) }
+                    .padding(12.dp)
+                    .testTag("price_alert_switch_row"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Enable Price Alerts",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Enable or disable automated push notification checks",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onEnabledChange,
+                    modifier = Modifier.testTag("price_alert_switch"),
+                    colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
+                )
+            }
+
+            if (enabled) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+
+                // Alert Suburb Selector
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Alert Suburb",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { isSuburbMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth().testTag("alert_suburb_button"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = suburb.uppercase(),
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (isSuburbMenuExpanded) {
+                            AlertDialog(
+                                onDismissRequest = { isSuburbMenuExpanded = false },
+                                title = { Text("Select Alert Suburb") },
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedTextField(
+                                            value = suburbSearchQuery,
+                                            onValueChange = { suburbSearchQuery = it },
+                                            placeholder = { Text("Search suburb...") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth().testTag("alert_suburb_search_input")
+                                        )
+                                        val filtered = allSuburbs.filter {
+                                            it.contains(suburbSearchQuery, ignoreCase = true)
+                                        }.take(15)
+                                        
+                                        LazyColumn(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = 200.dp)
+                                        ) {
+                                            items(filtered.size) { index ->
+                                                val s = filtered[index]
+                                                DropdownMenuItem(
+                                                    text = { Text(s.uppercase()) },
+                                                    onClick = {
+                                                        onSuburbChange(s)
+                                                        isSuburbMenuExpanded = false
+                                                    },
+                                                    modifier = Modifier.testTag("suburb_item_${s.lowercase()}")
+                                                )
+                                            }
+                                        }
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = { isSuburbMenuExpanded = false }) {
+                                        Text("Close")
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Alert Product Selector
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Alert Fuel Type",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { isProductMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth().testTag("alert_product_button"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = product.displayName,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = isProductMenuExpanded,
+                            onDismissRequest = { isProductMenuExpanded = false },
+                            modifier = Modifier.fillMaxWidth(0.9f).testTag("alert_product_dropdown")
+                        ) {
+                            FuelProduct.values().forEach { prod ->
+                                DropdownMenuItem(
+                                    text = { Text(prod.displayName) },
+                                    onClick = {
+                                        onProductSelect(prod)
+                                        isProductMenuExpanded = false
+                                    },
+                                    modifier = Modifier.testTag("product_item_${prod.name.lowercase()}")
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Price Threshold Slider
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Notification Threshold",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = String.format(Locale.US, "%.1f ¢/L", threshold),
+                            fontWeight = FontWeight.Black,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Slider(
+                        value = threshold,
+                        onValueChange = { onThresholdChange(it) },
+                        valueRange = 130f..230f,
+                        steps = 99,
+                        modifier = Modifier.testTag("price_threshold_slider"),
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                    
+                    Text(
+                        text = "You will be alerted if the price of ${product.displayName} drops below ${String.format(Locale.US, "%.1f", threshold)}¢/L in ${suburb.uppercase()}.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp
+                    )
+                }
+            }
         }
     }
 }

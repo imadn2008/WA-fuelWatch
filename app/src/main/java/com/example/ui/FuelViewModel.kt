@@ -28,7 +28,7 @@ enum class DesignStyle {
 }
 
 enum class ThemeColor {
-    BLUE, GREEN, ORANGE, PURPLE, RED, TEAL, AMBER, ROSE, SLATE
+    BLUE, GREEN, ORANGE, PURPLE, RED, TEAL, AMBER, ROSE, SLATE, CYAN, INDIGO, GOLD, EMERALD
 }
 
 class FuelViewModel(application: Application) : AndroidViewModel(application) {
@@ -82,37 +82,124 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = FuelRepository(db.favoriteStationDao(), OkHttpClient())
 
     // UI Input States
-    private val _selectedProduct = MutableStateFlow(FuelProduct.UNLEADED)
+    private val _selectedProduct = MutableStateFlow(
+        try {
+            FuelProduct.valueOf(prefs.getString("selected_product", FuelProduct.UNLEADED.name) ?: FuelProduct.UNLEADED.name)
+        } catch (e: Exception) {
+            FuelProduct.UNLEADED
+        }
+    )
     val selectedProduct: StateFlow<FuelProduct> = _selectedProduct.asStateFlow()
 
     private val _selectedDay = MutableStateFlow("today") // "today", "tomorrow"
     val selectedDay: StateFlow<String> = _selectedDay.asStateFlow()
 
-    private val _selectedBrand = MutableStateFlow("") // Empty for all
+    private val _selectedBrand = MutableStateFlow(prefs.getString("selected_brand", "") ?: "")
     val selectedBrand: StateFlow<String> = _selectedBrand.asStateFlow()
 
-    private val _selectedSuburb = MutableStateFlow("PERTH") // Default to Perth
+    private val _selectedSuburb = MutableStateFlow(prefs.getString("selected_suburb", "PERTH") ?: "PERTH")
     val selectedSuburb: StateFlow<String> = _selectedSuburb.asStateFlow()
 
-    private val _tripStartSuburb = MutableStateFlow("PERTH")
+    private val _tripStartSuburb = MutableStateFlow(prefs.getString("trip_start_suburb", "PERTH") ?: "PERTH")
     val tripStartSuburb: StateFlow<String> = _tripStartSuburb.asStateFlow()
 
-    private val _tripEndSuburb = MutableStateFlow("MANDURAH")
+    private val _tripEndSuburb = MutableStateFlow(prefs.getString("trip_end_suburb", "MANDURAH") ?: "MANDURAH")
     val tripEndSuburb: StateFlow<String> = _tripEndSuburb.asStateFlow()
-
-    fun setTripStartSuburb(suburb: String) {
-        _tripStartSuburb.value = suburb
-    }
-
-    fun setTripEndSuburb(suburb: String) {
-        _tripEndSuburb.value = suburb
-    }
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _sortBy = MutableStateFlow(SortOption.PRICE)
+    private val _sortBy = MutableStateFlow(
+        try {
+            SortOption.valueOf(prefs.getString("sort_by", SortOption.PRICE.name) ?: SortOption.PRICE.name)
+        } catch (e: Exception) {
+            SortOption.PRICE
+        }
+    )
     val sortBy: StateFlow<SortOption> = _sortBy.asStateFlow()
+
+    // Persistent Tab State (0 = Trends, 1 = My Trip, 2 = Near Me, 3 = Favorites, 4 = Settings)
+    private val _selectedTab = MutableStateFlow(prefs.getInt("selected_tab", 2))
+    val selectedTab: StateFlow<Int> = _selectedTab.asStateFlow()
+
+    fun setSelectedTab(tab: Int) {
+        _selectedTab.value = tab
+        prefs.edit().putInt("selected_tab", tab).apply()
+    }
+
+    // Price Alert / Notification Settings
+    private val _priceAlertsEnabled = MutableStateFlow(prefs.getBoolean("price_alerts_enabled", false))
+    val priceAlertsEnabled: StateFlow<Boolean> = _priceAlertsEnabled.asStateFlow()
+
+    fun setPriceAlertsEnabled(enabled: Boolean) {
+        _priceAlertsEnabled.value = enabled
+        prefs.edit().putBoolean("price_alerts_enabled", enabled).apply()
+    }
+
+    // Individual User Metadata and persistent preferences
+    private val _userId = MutableStateFlow(
+        prefs.getString("user_id", null) ?: run {
+            val newId = "WA-FW-" + java.util.UUID.randomUUID().toString().take(8).uppercase()
+            prefs.edit().putString("user_id", newId).apply()
+            newId
+        }
+    )
+    val userId: StateFlow<String> = _userId.asStateFlow()
+
+    private val _userName = MutableStateFlow(prefs.getString("user_name", "Valued Motorist") ?: "Valued Motorist")
+    val userName: StateFlow<String> = _userName.asStateFlow()
+
+    fun setUserName(name: String) {
+        _userName.value = name
+        prefs.edit().putString("user_name", name).apply()
+    }
+
+    private val _userCarType = MutableStateFlow(prefs.getString("user_car_type", "Standard SUV/Sedan") ?: "Standard SUV/Sedan")
+    val userCarType: StateFlow<String> = _userCarType.asStateFlow()
+
+    fun setUserCarType(carType: String) {
+        _userCarType.value = carType
+        prefs.edit().putString("user_car_type", carType).apply()
+    }
+
+    private val _userInstalledAt = MutableStateFlow(
+        prefs.getString("user_installed_at", null) ?: run {
+            val currentFormat = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault()).format(java.util.Date())
+            prefs.edit().putString("user_installed_at", currentFormat).apply()
+            currentFormat
+        }
+    )
+    val userInstalledAt: StateFlow<String> = _userInstalledAt.asStateFlow()
+
+    private val _priceAlertThreshold = MutableStateFlow(prefs.getFloat("price_alert_threshold", 175.0f))
+    val priceAlertThreshold: StateFlow<Float> = _priceAlertThreshold.asStateFlow()
+
+    fun setPriceAlertThreshold(threshold: Float) {
+        _priceAlertThreshold.value = threshold
+        prefs.edit().putFloat("price_alert_threshold", threshold).apply()
+    }
+
+    private val _priceAlertSuburb = MutableStateFlow(prefs.getString("price_alert_suburb", "PERTH") ?: "PERTH")
+    val priceAlertSuburb: StateFlow<String> = _priceAlertSuburb.asStateFlow()
+
+    fun setPriceAlertSuburb(suburb: String) {
+        _priceAlertSuburb.value = suburb
+        prefs.edit().putString("price_alert_suburb", suburb).apply()
+    }
+
+    private val _priceAlertProduct = MutableStateFlow(
+        try {
+            FuelProduct.valueOf(prefs.getString("price_alert_product", FuelProduct.UNLEADED.name) ?: FuelProduct.UNLEADED.name)
+        } catch (e: Exception) {
+            FuelProduct.UNLEADED
+        }
+    )
+    val priceAlertProduct: StateFlow<FuelProduct> = _priceAlertProduct.asStateFlow()
+
+    fun setPriceAlertProduct(product: FuelProduct) {
+        _priceAlertProduct.value = product
+        prefs.edit().putString("price_alert_product", product.name).apply()
+    }
 
     // Location State
     private val _userLocation = MutableStateFlow<Location?>(null)
@@ -186,6 +273,7 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setProduct(product: FuelProduct) {
         _selectedProduct.value = product
+        prefs.edit().putString("selected_product", product.name).apply()
         refreshFuelPrices()
     }
 
@@ -196,10 +284,22 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setBrand(brand: String) {
         _selectedBrand.value = brand
+        prefs.edit().putString("selected_brand", brand).apply()
     }
 
     fun setSuburb(suburb: String) {
         _selectedSuburb.value = suburb
+        prefs.edit().putString("selected_suburb", suburb).apply()
+    }
+
+    fun setTripStartSuburb(suburb: String) {
+        _tripStartSuburb.value = suburb
+        prefs.edit().putString("trip_start_suburb", suburb).apply()
+    }
+
+    fun setTripEndSuburb(suburb: String) {
+        _tripEndSuburb.value = suburb
+        prefs.edit().putString("trip_end_suburb", suburb).apply()
     }
 
     fun setSearchQuery(query: String) {
@@ -208,6 +308,7 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSortBy(option: SortOption) {
         _sortBy.value = option
+        prefs.edit().putString("sort_by", option.name).apply()
     }
 
     fun updateUserLocation() {
@@ -373,6 +474,9 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
                 // Save averages to historical cache in SharedPreferences
                 saveAveragesToCache(productId, yesterdayResult, todayResult, tomorrowResult)
                 
+                // Trigger Price Alerts Check
+                checkAndTriggerPriceAlerts(todayResult)
+                
                 Log.d(TAG, "Loaded: yesterday=${yesterdayResult.size}, today=${todayResult.size}, tomorrow=${tomorrowResult.size}")
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading fuel prices: ${e.message}", e)
@@ -381,6 +485,58 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
                 _isLoading.value = false
             }
         }
+    }
+
+    private fun checkAndTriggerPriceAlerts(stations: List<FuelStation>) {
+        if (!priceAlertsEnabled.value) return
+        
+        val alertProduct = priceAlertProduct.value
+        val alertSuburb = priceAlertSuburb.value.trim()
+        val alertThreshold = priceAlertThreshold.value
+
+        // Filter stations matching alert criteria
+        val matchingStations = stations.filter { station ->
+            station.location.equals(alertSuburb, ignoreCase = true) &&
+            station.price > 0.0 &&
+            station.price <= alertThreshold
+        }
+
+        if (matchingStations.isNotEmpty()) {
+            val cheapest = matchingStations.minByOrNull { it.price }
+            cheapest?.let { station ->
+                sendPriceAlertNotification(station, alertProduct)
+            }
+        }
+    }
+
+    private fun sendPriceAlertNotification(station: FuelStation, product: FuelProduct) {
+        val context = getApplication<Application>()
+        val notificationManager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        
+        // Build Notification Intent
+        val intent = android.content.Intent(context, com.example.MainActivity::class.java).apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            context, 0, intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val title = "Price Alert: ${product.displayName} dropped!"
+        val message = "${station.tradingName} in ${station.location} is selling for ${station.price}¢/L (below your ${priceAlertThreshold.value}¢/L threshold)!"
+
+        val notification = androidx.core.app.NotificationCompat.Builder(context, "FUEL_ALERT_CHANNEL")
+            .setSmallIcon(android.R.drawable.ic_dialog_info) // Standard dialog info icon
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(message))
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(androidx.core.app.NotificationCompat.DEFAULT_ALL)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(42, notification)
     }
 
     // Expose the calculated 7-day average prices for the UI trends view

@@ -90,6 +90,22 @@ fun getThemeColors(themeColor: ThemeColor, darkTheme: Boolean): Pair<Color, Colo
             if (darkTheme) Pair(Color(0xFFCFD8DC), Color(0xFF37474F))
             else Pair(Color(0xFF455A64), Color(0xFFECEFF1))
         }
+        ThemeColor.CYAN -> {
+            if (darkTheme) Pair(Color(0xFF80DEEA), Color(0xFF006064))
+            else Pair(Color(0xFF00ACC1), Color(0xFFE0F7FA))
+        }
+        ThemeColor.INDIGO -> {
+            if (darkTheme) Pair(Color(0xFF9FA8DA), Color(0xFF1A237E))
+            else Pair(Color(0xFF3F51B5), Color(0xFFE8EAF6))
+        }
+        ThemeColor.GOLD -> {
+            if (darkTheme) Pair(Color(0xFFFFD700), Color(0xFF4A3C00))
+            else Pair(Color(0xFFB8860B), Color(0xFFFFFDF0))
+        }
+        ThemeColor.EMERALD -> {
+            if (darkTheme) Pair(Color(0xFF66BB6A), Color(0xFF004D40))
+            else Pair(Color(0xFF2E7D32), Color(0xFFE8F5E9))
+        }
     }
 }
 
