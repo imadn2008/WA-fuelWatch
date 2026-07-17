@@ -626,6 +626,7 @@ fun MainFuelScreen(
             activeStationForBuiltInNav?.let { station ->
                 BuiltInNavigatorScreen(
                     station = station,
+                    userLocation = viewModel.userLocation.collectAsState().value,
                     onClose = { activeStationForBuiltInNav = null }
                 )
             }
@@ -682,13 +683,19 @@ fun MainFuelScreen(
 @Composable
 fun BuiltInNavigatorScreen(
     station: FuelStation,
+    userLocation: Location?,
     onClose: () -> Unit
 ) {
     var stepIndex by remember { mutableStateOf(0) }
     var tripProgress by remember { mutableStateOf(0f) }
-    var speed by remember { mutableStateOf(60) }
+    var speed by remember { mutableStateOf(0) }
     var distanceRemaining by remember { mutableStateOf(5.8f) }
     var isArrived by remember { mutableStateOf(false) }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+
+    var startLocation by remember { mutableStateOf<Location?>(null) }
+    var isDriving by remember { mutableStateOf(false) }
 
     val steps = remember(station) {
         listOf(
@@ -701,176 +708,414 @@ fun BuiltInNavigatorScreen(
         )
     }
 
-    LaunchedEffect(Unit) {
-        while (tripProgress < 1f) {
-            kotlinx.coroutines.delay(2000)
-            tripProgress += 0.166f
-            stepIndex = (tripProgress * (steps.size - 1)).toInt().coerceIn(0, steps.size - 1)
-            distanceRemaining = (5.8f * (1f - tripProgress)).coerceAtLeast(0f)
-            speed = (50..70).random()
-            if (tripProgress >= 0.95f) {
-                tripProgress = 1f
+    val targetLoc = remember(station) {
+        Location("target").apply {
+            latitude = station.latitude
+            longitude = station.longitude
+        }
+    }
+
+    // Automatically detect driving if user moves more than 3 meters from starting location
+    LaunchedEffect(userLocation) {
+        userLocation?.let { loc ->
+            if (startLocation == null) {
+                startLocation = loc
+            } else if (!isDriving) {
+                val distanceMoved = loc.distanceTo(startLocation!!)
+                if (distanceMoved > 3f) {
+                    isDriving = true
+                }
+            }
+        }
+    }
+
+    // Process real-time driving updates based on GPS if actively driving in real mode
+    LaunchedEffect(userLocation, isDriving) {
+        if (isDriving && userLocation != null) {
+            val start = startLocation ?: userLocation
+            val totalDist = start.distanceTo(targetLoc).coerceAtLeast(100f)
+            val remainingDist = userLocation.distanceTo(targetLoc)
+            
+            val progress = (1f - (remainingDist / totalDist)).coerceIn(0f, 1f)
+            tripProgress = progress
+            distanceRemaining = (remainingDist / 1000f).coerceAtLeast(0f)
+            
+            if (userLocation.hasSpeed()) {
+                speed = (userLocation.speed * 3.6f).toInt().coerceAtLeast(0)
+            } else if (remainingDist > 10f) {
+                speed = (30..60).random()
+            } else {
+                speed = 0
+            }
+            
+            if (remainingDist < 15f) {
                 isArrived = true
+                tripProgress = 1f
                 speed = 0
                 distanceRemaining = 0f
                 stepIndex = steps.size - 1
+            } else {
+                stepIndex = (progress * (steps.size - 1)).toInt().coerceIn(0, steps.size - 2)
             }
         }
+    }
+
+    LaunchedEffect(tripProgress) {
+        webViewRef?.evaluateJavascript("setCarProgress($tripProgress);", null)
+    }
+
+    val navMapHtml = remember(station, isDark) {
+        val tileLayerUrl = "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+            <style>
+                html, body, #map {
+                    height: 100%;
+                    width: 100%;
+                    margin: 0;
+                    padding: 0;
+                    background-color: ${if (isDark) "#070A13" else "#f3f4f6"};
+                }
+                ${if (isDark) """
+                .leaflet-tile {
+                    filter: invert(90%) hue-rotate(180deg) brightness(105%) contrast(95%);
+                }
+                """ else ""}
+                .car-marker {
+                    width: 32px;
+                    height: 32px;
+                }
+                .car-marker-inner {
+                    width: 32px;
+                    height: 32px;
+                    background-color: #00F0FF;
+                    border: 2px solid white;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 16px;
+                    box-shadow: 0 0 12px #00F0FF;
+                }
+                .dest-pin {
+                    border-radius: 50%;
+                    background-color: #EF4444;
+                    border: 2px solid white;
+                    width: 30px;
+                    height: 30px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: 0 0 10px rgba(239, 68, 68, 0.7);
+                    font-size: 14px;
+                    color: white;
+                }
+                .waze-pulse {
+                    animation: wazePulse 1.8s infinite;
+                }
+                @keyframes wazePulse {
+                    0% { transform: scale(1); }
+                    50% { transform: scale(1.15); }
+                    100% { transform: scale(1); }
+                }
+            </style>
+        </head>
+        <body>
+            <div id="map"></div>
+            <script>
+                var mapInstance = null;
+                var carMarker = null;
+                var destMarker = null;
+                var routePolyline = null;
+                var routePoints = [];
+                var alertMarkers = [];
+                
+                function initNavMap() {
+                    try {
+                        if (mapInstance) return;
+                        var stationLat = ${station.latitude};
+                        var stationLng = ${station.longitude};
+                        var startLat = stationLat + 0.015;
+                        var startLng = stationLng - 0.012;
+                        
+                        mapInstance = L.map('map', { zoomControl: false }).setView([startLat, startLng], 15);
+                        
+                        L.tileLayer('$tileLayerUrl', {
+                            maxZoom: 19
+                        }).addTo(mapInstance);
+                        
+                        var p0 = [startLat, startLng];
+                        var p1 = [startLat - 0.005, startLng + 0.003];
+                        var p2 = [startLat - 0.010, startLng + 0.008];
+                        var p3 = [stationLat, stationLng];
+                        
+                        routePoints = [];
+                        var rawPoints = [p0, p1, p2, p3];
+                        for (var i = 0; i < rawPoints.length - 1; i++) {
+                            var ptA = rawPoints[i];
+                            var ptB = rawPoints[i+1];
+                            for (var t = 0; t <= 1; t += 0.02) {
+                                var lat = ptA[0] + (ptB[0] - ptA[0]) * t;
+                                var lng = ptA[1] + (ptB[1] - ptA[1]) * t;
+                                routePoints.push([lat, lng]);
+                            }
+                        }
+                        routePoints.push(p3);
+                        
+                        routePolyline = L.polyline(routePoints, {
+                            color: '#00F0FF',
+                            weight: 6,
+                            opacity: 0.85
+                        }).addTo(mapInstance);
+                        
+                        var alertSpecs = [
+                            { idx: Math.floor(routePoints.length * 0.25), type: 'police', emoji: '👮' },
+                            { idx: Math.floor(routePoints.length * 0.55), type: 'roadworks', emoji: '🚧' },
+                            { idx: Math.floor(routePoints.length * 0.75), type: 'hazard', emoji: '⚠️' }
+                        ];
+                        
+                        alertSpecs.forEach(function(spec) {
+                            var coord = routePoints[spec.idx];
+                            var alertIcon = L.divIcon({
+                                className: 'waze-custom-icon',
+                                html: "<div class='waze-pulse' style='background-color:#111827;border:2px solid #00F0FF;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 0 8px #00F0FF;'>" + spec.emoji + "</div>",
+                                iconSize: [28, 28],
+                                iconAnchor: [14, 14]
+                            });
+                            var marker = L.marker(coord, { icon: alertIcon }).addTo(mapInstance);
+                            alertMarkers.push(marker);
+                        });
+                        
+                        var destIcon = L.divIcon({
+                            className: 'dest-marker-icon',
+                            html: "<div class='dest-pin'>⛽</div>",
+                            iconSize: [30, 30],
+                            iconAnchor: [15, 15]
+                        });
+                        destMarker = L.marker([stationLat, stationLng], { icon: destIcon }).addTo(mapInstance);
+                        
+                        var carIcon = L.divIcon({
+                            className: 'car-marker-icon',
+                            html: "<div class='car-marker'><div class='car-marker-inner'>🚙</div></div>",
+                            iconSize: [32, 32],
+                            iconAnchor: [16, 16]
+                        });
+                        carMarker = L.marker([startLat, startLng], { icon: carIcon }).addTo(mapInstance);
+                        
+                        setTimeout(function() {
+                            if (mapInstance) {
+                                mapInstance.invalidateSize();
+                            }
+                        }, 300);
+                    } catch (e) {
+                        console.error(e);
+                    }
+                }
+                
+                function setCarProgress(progress) {
+                    if (!mapInstance || !carMarker || routePoints.length === 0) return;
+                    try {
+                        var idx = Math.floor(progress * (routePoints.length - 1));
+                        idx = Math.max(0, Math.min(routePoints.length - 1, idx));
+                        var currentCoord = routePoints[idx];
+                        
+                        carMarker.setLatLng(currentCoord);
+                        mapInstance.panTo(currentCoord, { animate: true, duration: 0.5 });
+                    } catch (e) {
+                        console.error(e);
+                    }
+                }
+                
+                window.onload = function() {
+                    initNavMap();
+                };
+                if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                    initNavMap();
+                } else {
+                    document.addEventListener('DOMContentLoaded', initNavMap);
+                }
+            </script>
+        </body>
+        </html>
+        """.trimIndent()
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF070A13))
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawCircle(
-                color = Color(0xFF00F0FF).copy(alpha = 0.04f),
-                radius = size.minDimension / 1.5f,
-                center = center
-            )
+        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    layoutParams = android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    webViewRef = this
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    loadDataWithBaseURL("file:///android_asset/", navMapHtml, "text/html", "UTF-8", null)
+                }
+            },
+            update = { webViewInstance ->
+                webViewRef = webViewInstance
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        Card(
+            modifier = Modifier
+                .statusBarsPadding()
+                .fillMaxWidth()
+                .padding(16.dp)
+                .align(Alignment.TopCenter),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF131A2E).copy(alpha = 0.9f)),
+            border = BorderStroke(1.dp, Color(0xFF00F0FF).copy(alpha = 0.3f))
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(Color(0xFF00F0FF).copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isArrived) Icons.Default.CheckCircle else Icons.Default.Navigation,
+                        contentDescription = null,
+                        tint = if (isArrived) Color(0xFF22C55E) else Color(0xFF00F0FF),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isArrived) "Arrived at Destination!" else "Waze HUD Navigation",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = Color.White
+                    )
+                    Text(
+                        text = steps[stepIndex],
+                        fontSize = 14.sp,
+                        color = Color.LightGray,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
 
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding(),
+                .align(Alignment.CenterStart)
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF131A2E).copy(alpha = 0.85f)),
-                border = BorderStroke(1.dp, Color(0xFF00F0FF).copy(alpha = 0.2f))
+            Box(
+                modifier = Modifier
+                    .size(76.dp)
+                    .background(Color(0xFF0B0F19).copy(alpha = 0.8f), CircleShape)
+                    .border(2.dp, Color(0xFF00F0FF), CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(Color(0xFF00F0FF).copy(alpha = 0.15f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (isArrived) Icons.Default.CheckCircle else Icons.Default.Navigation,
-                            contentDescription = null,
-                            tint = if (isArrived) Color(0xFF22C55E) else Color(0xFF00F0FF),
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (isArrived) "Arrived!" else "In-App Built-In GPS",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = Color.White
-                        )
-                        Text(
-                            text = "To: ${station.tradingName}",
-                            fontSize = 14.sp,
-                            color = Color.LightGray,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "$speed",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 24.sp,
+                        color = Color(0xFF00F0FF)
+                    )
+                    Text(
+                        text = "km/h",
+                        fontSize = 9.sp,
+                        color = Color.Gray
+                    )
                 }
             }
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(Color.White, CircleShape)
+                    .border(3.dp, Color.Red, CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(180.dp)
-                        .border(4.dp, Color(0xFF00F0FF).copy(alpha = 0.15f), CircleShape)
-                        .padding(8.dp)
-                        .border(2.dp, Color(0xFF00F0FF).copy(alpha = 0.4f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "$speed",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 48.sp,
-                            color = if (isArrived) Color(0xFF22C55E) else Color(0xFF00F0FF)
-                        )
-                        Text(
-                            text = "km/h",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Gray
-                        )
-                    }
-                }
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E294B)),
-                    border = BorderStroke(1.dp, Color(0xFF00F0FF).copy(alpha = 0.3f))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = steps[stepIndex],
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 16.sp,
-                            color = Color.White,
-                            textAlign = TextAlign.Center
-                        )
-                        
-                        LinearProgressIndicator(
-                            progress = tripProgress,
-                            color = Color(0xFF00F0FF),
-                            trackColor = Color.White.copy(alpha = 0.1f),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                        )
-                    }
-                }
+                Text(
+                    text = "70",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.sp,
+                    color = Color.Black
+                )
             }
+        }
 
+        Card(
+            modifier = Modifier
+                .navigationBarsPadding()
+                .fillMaxWidth()
+                .padding(16.dp)
+                .align(Alignment.BottomCenter),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF131A2E).copy(alpha = 0.9f)),
+            border = BorderStroke(1.dp, Color(0xFF00F0FF).copy(alpha = 0.3f))
+        ) {
             Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Distance", fontSize = 12.sp, color = Color.Gray)
-                        Text(
-                            text = String.format("%.1f km", distanceRemaining),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = Color.White
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column {
+                            Text("Distance Left", fontSize = 11.sp, color = Color.Gray)
+                            Text(
+                                text = String.format("%.1f km", distanceRemaining),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Color.White
+                            )
+                        }
+                        Column {
+                            Text("Time remaining", fontSize = 11.sp, color = Color.Gray)
+                            Text(
+                                text = if (isArrived) "0 mins" else "${(distanceRemaining * 1.5).toInt() + 1} mins",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Color.White
+                            )
+                        }
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("ETA", fontSize = 12.sp, color = Color.Gray)
-                        Text(
-                            text = if (isArrived) "0 mins" else "${(distanceRemaining * 1.5).toInt() + 1} mins",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = Color.White
+
+                    Box(
+                        modifier = Modifier
+                            .width(100.dp)
+                            .height(6.dp)
+                            .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(tripProgress)
+                                .fillMaxHeight()
+                                .background(Color(0xFF00F0FF), RoundedCornerShape(3.dp))
                         )
                     }
                 }
@@ -879,16 +1124,128 @@ fun BuiltInNavigatorScreen(
                     onClick = onClose,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
+                        .height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
                         text = if (isArrived) "Close" else "Exit Navigation",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         color = Color.White
                     )
+                }
+            }
+        }
+
+        if (!isDriving) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF070A13).copy(alpha = 0.85f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp)
+                        .testTag("gps_waiting_card"),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131A2E).copy(alpha = 0.95f)),
+                    border = BorderStroke(1.dp, Color(0xFF00F0FF).copy(alpha = 0.4f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .background(Color(0xFF00F0FF).copy(alpha = 0.15f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Navigation,
+                                contentDescription = "Waiting for driving",
+                                tint = Color(0xFF00F0FF),
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+
+                        Text(
+                            text = "Waiting for Drive to Start",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 20.sp,
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Text(
+                            text = "This built-in GPS maps real-time driving. As soon as you start driving and move, navigation will begin.",
+                            fontSize = 13.sp,
+                            color = Color.LightGray,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 18.sp
+                        )
+
+                        if (userLocation != null) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF0B0F19), RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("GPS Status", fontSize = 10.sp, color = Color.Gray)
+                                    Text("Connected", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF22C55E))
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("Current Lat", fontSize = 10.sp, color = Color.Gray)
+                                    Text(String.format("%.4f", userLocation.latitude), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("Current Lng", fontSize = 10.sp, color = Color.Gray)
+                                    Text(String.format("%.4f", userLocation.longitude), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF0B0F19), RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color(0xFF00F0FF),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Acquiring GPS lock...",
+                                    fontSize = 12.sp,
+                                    color = Color.LightGray
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = onClose,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            border = BorderStroke(1.dp, Color.Red),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Cancel", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
@@ -1488,6 +1845,13 @@ fun FavoritesListView(
     }
 }
 
+data class WazeReport(
+    val type: String,
+    val title: String,
+    val desc: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 // 6. Interactive Leaflet Map View inside WebView with Google Maps Tile Integration
 @Composable
 fun FuelMapView(
@@ -1497,12 +1861,16 @@ fun FuelMapView(
     userLocation: Location? = null,
     onGpsClick: (() -> Unit)? = null,
     selectedSuburb: String = "",
-    routeStations: List<FuelStation> = emptyList()
+    routeStations: List<FuelStation> = emptyList(),
+    userReport: WazeReport? = null,
+    startSuburb: String = "",
+    endSuburb: String = ""
 ) {
     val context = LocalContext.current
     val isDark = MaterialTheme.colorScheme.background.red < 0.5f
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var forceCenterTrigger by remember { mutableStateOf(0) }
+    var showReportDialog by remember { mutableStateOf(false) }
 
     // Request launcher for GPS location permission
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -1529,6 +1897,15 @@ fun FuelMapView(
         }
     }
 
+    LaunchedEffect(userReport) {
+        userReport?.let { report ->
+            webViewRef?.evaluateJavascript(
+                "if (window.addCustomAlert) { window.addCustomAlert('${report.type}', '${report.title.replace("'", "\\'")}', '${report.desc.replace("'", "\\'")}'); }",
+                null
+            )
+        }
+    }
+
     // Serialize route coordinates into lightweight JSON array for injecting into JS Leaflet map
     val routePointsJson = remember(routeStations) {
         val list = routeStations.map { s ->
@@ -1537,11 +1914,11 @@ fun FuelMapView(
         "[ ${list.joinToString(", ")} ]"
     }
 
-    LaunchedEffect(routePointsJson) {
+    LaunchedEffect(routePointsJson, startSuburb, endSuburb) {
         if (routeStations.isNotEmpty()) {
-            webViewRef?.evaluateJavascript("drawRoute($routePointsJson);", null)
+            webViewRef?.evaluateJavascript("drawRoute($routePointsJson, '$startSuburb', '$endSuburb');", null)
         } else {
-            webViewRef?.evaluateJavascript("drawRoute([]);", null)
+            webViewRef?.evaluateJavascript("drawRoute([], '', '');", null)
         }
     }
 
@@ -1794,6 +2171,16 @@ fun FuelMapView(
                         box-shadow: 0 0 0 0px rgba(0, 120, 255, 0);
                     }
                 }
+                
+                /* Custom Waze icon pulse animation styling */
+                .waze-pulse {
+                    animation: wazePulse 2s infinite;
+                }
+                @keyframes wazePulse {
+                    0% { transform: scale(1); box-shadow: 0 0 0 0px rgba(0,0,0,0.3); }
+                    70% { transform: scale(1.08); box-shadow: 0 0 0 8px rgba(0,0,0,0); }
+                    100% { transform: scale(1); box-shadow: 0 0 0 0px rgba(0,0,0,0); }
+                }
             </style>
         </head>
         <body>
@@ -1882,6 +2269,11 @@ fun FuelMapView(
                         window.mapInstance.setView([lat, lng], 13);
                         window.hasSetInitialView = true;
                     }
+
+                    // Generate default traffic once user location is known
+                    if (!window.defaultWazeTraffic || window.defaultWazeTraffic.length === 0) {
+                        generateDefaultWazeTraffic();
+                    }
                 }
 
                 function updateVisibleMarkers() {
@@ -1958,13 +2350,199 @@ fun FuelMapView(
                 }
 
                 window.routePolyline = null;
-                function drawRoute(latLngs) {
+                window.lastRouteJson = null;
+                window.wazeAlertMarkers = [];
+                window.defaultWazeTraffic = [];
+
+                function generateSmoothRoute(points) {
+                    if (points.length < 2) return points;
+                    var path = [];
+                    for (var i = 0; i < points.length - 1; i++) {
+                        var p0 = points[i];
+                        var p1 = points[i + 1];
+                        for (var t = 0; t <= 1; t += 0.04) {
+                            var lat = p0[0] + (p1[0] - p0[0]) * t;
+                            var lng = p0[1] + (p1[1] - p0[1]) * t;
+                            
+                            var curveFactor = Math.sin(t * Math.PI);
+                            var shiftAmt = 0.012 * curveFactor * Math.sin(i * 1.5 + 0.5);
+                            
+                            var dy = p1[0] - p0[0];
+                            var dx = p1[1] - p0[1];
+                            var len = Math.sqrt(dx*dx + dy*dy);
+                            if (len > 0) {
+                                lat += (-dx / len) * shiftAmt;
+                                lng += (dy / len) * shiftAmt;
+                            }
+                            path.push([lat, lng]);
+                        }
+                    }
+                    path.push(points[points.length - 1]);
+                    return path;
+                }
+
+                function drawWazeAlerts(smoothPath) {
+                    if (window.wazeAlertMarkers) {
+                        window.wazeAlertMarkers.forEach(function(m) {
+                            window.mapInstance.removeLayer(m);
+                        });
+                    }
+                    window.wazeAlertMarkers = [];
+
+                    if (smoothPath.length < 10) return;
+
+                    var indices = [
+                        { pct: 0.25, type: 'police', label: 'Police Speed Trap', desc: 'Police speed camera reported via Waze Live Feed. Verified by 18 drivers.' },
+                        { pct: 0.55, type: 'roadworks', label: 'Roadworks Ahead', desc: 'Road construction. Speed limit reduced to 40km/h.' },
+                        { pct: 0.80, type: 'hazard', label: 'Vehicle on Shoulder', desc: 'Broken down car on left lane. Caution advised.' }
+                    ];
+
+                    indices.forEach(function(info) {
+                        var idx = Math.floor(smoothPath.length * info.pct);
+                        var coord = smoothPath[idx];
+                        if (!coord) return;
+
+                        var wazeIcon = createWazeIcon(info.type);
+                        var marker = L.marker(coord, { icon: wazeIcon }).addTo(window.mapInstance);
+                        
+                        var popupContent = "<div style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:8px;max-width:180px;'>" +
+                                           "<strong style='color:#004080;display:block;margin-bottom:4px;'>" + info.label + "</strong>" +
+                                           "<span style='font-size:11px;color:#333;'>" + info.desc + "</span>" +
+                                           "</div>";
+                                           
+                        marker.bindPopup(popupContent);
+                        window.wazeAlertMarkers.push(marker);
+                    });
+                }
+
+                function generateDefaultWazeTraffic() {
+                    if (!window.mapInstance) return;
+                    
+                    if (window.defaultWazeTraffic && window.defaultWazeTraffic.length > 0) {
+                        window.defaultWazeTraffic.forEach(function(m) {
+                            window.mapInstance.removeLayer(m);
+                        });
+                    }
+                    window.defaultWazeTraffic = [];
+
+                    var centerLat = window.currentCenter[0];
+                    var centerLng = window.currentCenter[1];
+
+                    var items = [
+                        { latOff: 0.0035, lngOff: -0.0052, type: 'police', title: 'Police Patrol', desc: 'Mobile speed traps reported. Live radar active.' },
+                        { latOff: -0.0051, lngOff: 0.0048, type: 'car', title: 'Wazer Ahead', desc: 'Civilian car driving. Traffic moving smoothly at 60 km/h.' },
+                        { latOff: 0.0075, lngOff: -0.0028, type: 'car', title: 'Active Driver', desc: 'Waze member. Road clear.' },
+                        { latOff: -0.0084, lngOff: -0.0062, type: 'car', title: 'Wazer', desc: 'Civilian driver online.' },
+                        { latOff: 0.0062, lngOff: 0.0084, type: 'roadworks', title: 'Roadworks Ahead', desc: 'Left lane closed. Safe limit 40 km/h.' },
+                        { latOff: -0.0025, lngOff: -0.0091, type: 'hazard', title: 'Vehicle Breakdown', desc: 'Vehicle on shoulder. Caution advised.' }
+                    ];
+
+                    items.forEach(function(info) {
+                        var mLat = centerLat + info.latOff;
+                        var mLng = centerLng + info.lngOff;
+                        var wazeIcon = createWazeIcon(info.type);
+                        var marker = L.marker([mLat, mLng], { icon: wazeIcon }).addTo(window.mapInstance);
+                        var popupContent = "<div style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:8px;max-width:180px;'>" +
+                                           "<strong style='color:#004080;display:block;margin-bottom:4px;'>" + info.title + "</strong>" +
+                                           "<span style='font-size:11px;color:#333;'>" + info.desc + "</span>" +
+                                           "</div>";
+                        marker.bindPopup(popupContent);
+                        window.defaultWazeTraffic.push(marker);
+                    });
+                }
+                
+                window.addWazeReport = function(type, label, desc, lat, lng) {
+                    if (!window.mapInstance) return;
+                    try {
+                        var targetLat = lat || window.currentCenter[0];
+                        var targetLng = lng || window.currentCenter[1];
+                        
+                        targetLat += (Math.random() - 0.5) * 0.0003;
+                        targetLng += (Math.random() - 0.5) * 0.0003;
+                        
+                        var wazeIcon = createWazeIcon(type);
+                        var marker = L.marker([targetLat, targetLng], { icon: wazeIcon }).addTo(window.mapInstance);
+                        var popupContent = "<div style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:8px;max-width:180px;'>" +
+                                           "<strong style='color:#E11D48;display:block;margin-bottom:4px;'>" + label + "</strong>" +
+                                           "<span style='font-size:11px;color:#333;'>" + desc + "</span>" +
+                                           "</div>";
+                        marker.bindPopup(popupContent).openPopup();
+                        window.wazeAlertMarkers.push(marker);
+                        window.mapInstance.setView([targetLat, targetLng], 14);
+                    } catch(e) {
+                        console.error("Custom alert draw error: " + e.message);
+                    }
+                };
+                
+                window.addCustomAlert = function(type, label, desc) {
+                    if (!window.mapInstance || !window.lastRouteJson) return;
+                    try {
+                        var latLngs = JSON.parse(window.lastRouteJson);
+                        if (!latLngs || latLngs.length === 0) return;
+                        
+                        var smoothLatLngs = generateSmoothRoute(latLngs);
+                        var midIdx = Math.floor(smoothLatLngs.length / 2);
+                        var baseCoord = smoothLatLngs[midIdx];
+                        var coord = [baseCoord[0] + (Math.random() - 0.5) * 0.005, baseCoord[1] + (Math.random() - 0.5) * 0.005];
+                        
+                        var wazeIcon = createWazeIcon(type);
+                        var marker = L.marker(coord, { icon: wazeIcon }).addTo(window.mapInstance);
+                        var popupContent = "<div style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:8px;max-width:180px;'>" +
+                                           "<strong style='color:#D81B60;display:block;margin-bottom:4px;'>" + label + "</strong>" +
+                                           "<span style='font-size:11px;color:#333;'>" + desc + "</span>" +
+                                           "</div>";
+                        marker.bindPopup(popupContent).openPopup();
+                        window.wazeAlertMarkers.push(marker);
+                        
+                        window.mapInstance.setView(coord, 14);
+                    } catch(e) {
+                        console.error("Custom alert draw error: " + e.message);
+                    }
+                };
+
+                function createWazeIcon(type) {
+                    var html = '';
+                    var color = '#0078FF';
+                    if (type === 'police') {
+                        color = '#1E3A8A';
+                        html = "<div class='waze-pulse' style='background-color:" + color + ";border:2px solid #FFF;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 10px rgba(30,58,138,0.6);'>" +
+                               "<span style='font-size:14px;font-weight:bold;color:#FFF;'>🚓</span></div>";
+                    } else if (type === 'roadworks') {
+                        color = '#F59E0B';
+                        html = "<div class='waze-pulse' style='background-color:" + color + ";border:2px solid #FFF;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 10px rgba(245,158,11,0.6);'>" +
+                               "<span style='font-size:14px;font-weight:bold;color:#FFF;'>🚧</span></div>";
+                    } else if (type === 'hazard') {
+                        color = '#EF4444';
+                        html = "<div class='waze-pulse' style='background-color:" + color + ";border:2px solid #FFF;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 10px rgba(239,68,68,0.6);'>" +
+                               "<span style='font-size:14px;font-weight:bold;color:#FFF;'>⚠️</span></div>";
+                    } else if (type === 'car') {
+                        color = '#10B981';
+                        html = "<div class='waze-pulse' style='background-color:" + color + ";border:2px solid #FFF;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 10px rgba(16,185,129,0.6);'>" +
+                               "<span style='font-size:14px;font-weight:bold;color:#FFF;'>🚗</span></div>";
+                    }
+                    return L.divIcon({
+                        className: 'waze-custom-icon',
+                        html: html,
+                        iconSize: [30, 30],
+                        iconAnchor: [15, 15]
+                    });
+                }
+
+                function drawRoute(latLngs, startSub, endSub) {
                     if (!window.mapInstance || typeof L === 'undefined') return;
+                    if (!latLngs || latLngs.length < 2) return;
+                    
+                    var routeKey = (startSub || '') + "_to_" + (endSub || '');
+                    var routePointsChanged = (window.lastRouteSuburbsKey !== routeKey);
+                    window.lastRouteSuburbsKey = routeKey;
+                    
+                    var serialized = JSON.stringify(latLngs);
+                    window.lastRouteJson = serialized;
+                    
                     if (window.routePolyline) {
                         window.mapInstance.removeLayer(window.routePolyline);
                         window.routePolyline = null;
                     }
-                    if (!latLngs || latLngs.length < 2) return;
                     
                     var routeColor = '#0061A4';
                     var routeWeight = 5;
@@ -1986,19 +2564,56 @@ fun FuelMapView(
                         routeWeight = 5;
                     }
                     
-                    window.routePolyline = L.polyline(latLngs, {
+                    // High-fidelity highway coordinates for popular routes!
+                    var finalPoints = latLngs;
+                    var sSub = (startSub || '').toUpperCase();
+                    var eSub = (endSub || '').toUpperCase();
+                    
+                    if (sSub === 'PERTH' && eSub === 'MANDURAH') {
+                        finalPoints = [
+                            [-31.953, 115.857],
+                            [-31.974, 115.853],
+                            [-32.006, 115.852],
+                            [-32.031, 115.845],
+                            [-32.056, 115.847],
+                            [-32.115, 115.849],
+                            [-32.164, 115.848],
+                            [-32.247, 115.851],
+                            [-32.339, 115.858],
+                            [-32.440, 115.847],
+                            [-32.536, 115.742]
+                        ];
+                    } else if (sSub === 'PERTH' && eSub === 'JOONDALUP') {
+                        finalPoints = [
+                            [-31.953, 115.857],
+                            [-31.936, 115.842],
+                            [-31.905, 115.815],
+                            [-31.888, 115.807],
+                            [-31.870, 115.795],
+                            [-31.821, 115.782],
+                            [-31.792, 115.776],
+                            [-31.744, 115.766]
+                        ];
+                    }
+                    
+                    var smoothLatLngs = generateSmoothRoute(finalPoints);
+                    
+                    window.routePolyline = L.polyline(smoothLatLngs, {
                         color: routeColor,
                         weight: routeWeight,
                         opacity: 0.85,
                         lineJoin: 'round'
                     }).addTo(window.mapInstance);
                     
-                    try {
-                        var bounds = L.latLngBounds(latLngs);
-                        window.mapInstance.fitBounds(bounds, { padding: [50, 50] });
-                        window.hasSetInitialView = true;
-                    } catch (e) {
-                        console.error(e);
+                    if (routePointsChanged) {
+                        try {
+                            var bounds = L.latLngBounds(smoothLatLngs);
+                            window.mapInstance.fitBounds(bounds, { padding: [50, 50] });
+                            window.hasSetInitialView = true;
+                        } catch (e) {
+                            console.error(e);
+                        }
+                        drawWazeAlerts(smoothLatLngs);
                     }
                 }
 
@@ -2119,45 +2734,219 @@ fun FuelMapView(
                 .testTag("web_map")
         )
 
-        // GPS Button overlay shown when onGpsClick callback is provided
-        if (onGpsClick != null) {
+        // GPS and Waze Report Buttons overlay
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Report button (Waze Style)
             FloatingActionButton(
-                onClick = {
-                    val hasFine = androidx.core.content.ContextCompat.checkSelfPermission(
-                        context,
-                        android.Manifest.permission.ACCESS_FINE_LOCATION
-                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    val hasCoarse = androidx.core.content.ContextCompat.checkSelfPermission(
-                        context,
-                        android.Manifest.permission.ACCESS_COARSE_LOCATION
-                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-                    if (hasFine || hasCoarse) {
-                        forceCenterTrigger++
-                        onGpsClick()
-                    } else {
-                        permissionLauncher.launch(
-                            arrayOf(
-                                android.Manifest.permission.ACCESS_FINE_LOCATION,
-                                android.Manifest.permission.ACCESS_COARSE_LOCATION
-                            )
-                        )
-                    }
-                },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                onClick = { showReportDialog = true },
+                containerColor = Color(0xFFE11D48), // Waze/Alert Rose red
+                contentColor = Color.White,
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp)
                     .size(48.dp)
-                    .testTag("gps_button")
+                    .testTag("waze_report_button")
             ) {
                 Icon(
-                    imageVector = Icons.Default.MyLocation,
-                    contentDescription = "My Location",
+                    imageVector = Icons.Default.Campaign,
+                    contentDescription = "Report Road Alert",
                     modifier = Modifier.size(24.dp)
                 )
             }
+
+            if (onGpsClick != null) {
+                FloatingActionButton(
+                    onClick = {
+                        val hasFine = androidx.core.content.ContextCompat.checkSelfPermission(
+                            context,
+                            android.Manifest.permission.ACCESS_FINE_LOCATION
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        val hasCoarse = androidx.core.content.ContextCompat.checkSelfPermission(
+                            context,
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                        if (hasFine || hasCoarse) {
+                            forceCenterTrigger++
+                            onGpsClick()
+                        } else {
+                            permissionLauncher.launch(
+                                arrayOf(
+                                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("gps_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MyLocation,
+                        contentDescription = "My Location",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
+
+        // Real-time Road incident reporting dialog
+        if (showReportDialog) {
+            AlertDialog(
+                onDismissRequest = { showReportDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = Color(0xFFE11D48),
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Report Road Incident", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            "Help fellow drivers by reporting hazards, police speed traps, or breakdowns in real-time.",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        
+                        // Option 1: Police
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val lat = userLocation?.latitude ?: -31.9505
+                                    val lng = userLocation?.longitude ?: 115.8605
+                                    webViewRef?.evaluateJavascript(
+                                        "if (window.addWazeReport) { window.addWazeReport('police', 'Police Speed Trap', 'Mobile radar/speed trap reported by user.', $lat, $lng); }",
+                                        null
+                                    )
+                                    showReportDialog = false
+                                    android.widget.Toast.makeText(context, "Police Speed Trap reported!", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("🚓", fontSize = 24.sp)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text("Police Speed Trap", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    Text("Report speed traps, cameras, or police presence", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+
+                        // Option 2: Car / Accident
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val lat = userLocation?.latitude ?: -31.9505
+                                    val lng = userLocation?.longitude ?: 115.8605
+                                    webViewRef?.evaluateJavascript(
+                                        "if (window.addWazeReport) { window.addWazeReport('car', 'Vehicle Breakdown', 'Broken down vehicle or collision reported by user.', $lat, $lng); }",
+                                        null
+                                    )
+                                    showReportDialog = false
+                                    android.widget.Toast.makeText(context, "Road incident reported!", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("🚗", fontSize = 24.sp)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text("Breakdown / Accident", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    Text("Report a broken down vehicle or road collision", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+
+                        // Option 3: Hazard
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val lat = userLocation?.latitude ?: -31.9505
+                                    val lng = userLocation?.longitude ?: 115.8605
+                                    webViewRef?.evaluateJavascript(
+                                        "if (window.addWazeReport) { window.addWazeReport('hazard', 'Road Hazard', 'Dangerous debris, pothole, or obstruction reported.', $lat, $lng); }",
+                                        null
+                                    )
+                                    showReportDialog = false
+                                    android.widget.Toast.makeText(context, "Road Hazard reported!", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("⚠️", fontSize = 24.sp)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text("Road Hazard", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    Text("Report potholes, animals, or debris on the road", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+
+                        // Option 4: Roadworks
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val lat = userLocation?.latitude ?: -31.9505
+                                    val lng = userLocation?.longitude ?: 115.8605
+                                    webViewRef?.evaluateJavascript(
+                                        "if (window.addWazeReport) { window.addWazeReport('roadworks', 'Active Roadworks', 'Roadworks/construction zone reported.', $lat, $lng); }",
+                                        null
+                                    )
+                                    showReportDialog = false
+                                    android.widget.Toast.makeText(context, "Roadworks reported!", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("🚧", fontSize = 24.sp)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text("Roadworks", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    Text("Report construction or speed limit reductions", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showReportDialog = false }) {
+                        Text("Close")
+                    }
+                }
+            )
         }
     }
 }
@@ -4586,6 +5375,15 @@ fun MyTripView(
 ) {
     var isStartSearchOpen by remember { mutableStateOf(false) }
     var isEndSearchOpen by remember { mutableStateOf(false) }
+    var userReport by remember { mutableStateOf<WazeReport?>(null) }
+    var simulatedSpeed by remember { mutableStateOf(95) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(2000)
+            simulatedSpeed = (94..103).random()
+        }
+    }
 
     // Derive intermediate suburbs on the trip leg to build a realistic timeline route
     val intermediateSuburbs = remember(startSuburb, endSuburb) {
@@ -4613,6 +5411,31 @@ fun MyTripView(
     val routeStationsGeographic = remember(stationsOnRoute, intermediateSuburbs) {
         intermediateSuburbs.flatMap { suburb ->
             stationsOnRoute.filter { it.location.equals(suburb, ignoreCase = true) }
+        }
+    }
+
+    // Calculate clean, non-zig-zagging route points representing the sequence of suburb centers
+    val cleanRoutePoints = remember(intermediateSuburbs, stations) {
+        intermediateSuburbs.mapNotNull { suburb ->
+            val stationsInSuburb = stations.filter { it.location.equals(suburb, ignoreCase = true) }
+            if (stationsInSuburb.isNotEmpty()) {
+                val avgLat = stationsInSuburb.map { it.latitude }.average()
+                val avgLng = stationsInSuburb.map { it.longitude }.average()
+                FuelStation(
+                    tradingName = suburb,
+                    address = "",
+                    brand = "",
+                    price = 0.0,
+                    latitude = avgLat,
+                    longitude = avgLng,
+                    phone = "",
+                    location = suburb,
+                    title = suburb,
+                    description = "",
+                    siteFeatures = "",
+                    day = "today"
+                )
+            } else null
         }
     }
 
@@ -4784,6 +5607,270 @@ fun MyTripView(
         }
     }
 
+    val wazeHudBlock = @Composable {
+        var reportStatusMessage by remember { mutableStateOf<String?>(null) }
+        
+        LaunchedEffect(reportStatusMessage) {
+            if (reportStatusMessage != null) {
+                kotlinx.coroutines.delay(3500)
+                reportStatusMessage = null
+            }
+        }
+        
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF).copy(alpha = 0.4f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+            colors = CardDefaults.cardColors(
+                containerColor = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF0B0C10).copy(alpha = 0.9f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // HUD Title & Pulsing Active Beacon
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFEF4444))
+                        )
+                        Text(
+                            text = "WAZE LIVE NAVIGATION HUD",
+                            fontWeight = FontWeight.Black,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(
+                        text = "PREMIUM ACTIVE",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF10B981),
+                        modifier = Modifier
+                            .background(Color(0xFF10B981).copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+
+                // ETA, Turn Instruction and Speed/Limit Dashboard Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Turn instruction & ETA column
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TrendingUp,
+                                contentDescription = "Turn Ahead",
+                                tint = if (designStyle == DesignStyle.FUTURISTIC) Color(0xFF00F0FF) else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Mitchell Fwy / Kwinana Fwy",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Continue straight • 1.4 km ahead",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(6.dp))
+                        
+                        // Trip details
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(
+                                text = "ETA: 26 mins",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Dist: 34.2 km",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Speed limit sign & Current Speedometer
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Australia style circular Speed Limit Sign
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Color.White)
+                                .border(4.dp, Color.Red, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (startSuburb == "PERTH" && endSuburb == "JOONDALUP") "100" else "80",
+                                color = Color.Black,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 15.sp
+                            )
+                        }
+
+                        // Fluctuating Speedometer
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "$simulatedSpeed",
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Black,
+                                color = if (simulatedSpeed > 100) Color(0xFFEF4444) else MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "km/h",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // Dynamic Banner Alert
+                val activeAlertText = when {
+                    userReport != null -> "🚨 USER REPORTED: ${userReport?.title} active on route!"
+                    startSuburb == "PERTH" && endSuburb == "MANDURAH" -> "🚓 Waze Alert: Police speed trap active near Rockingham on Freeway!"
+                    else -> "🚧 Waze Alert: Roadworks ahead near ${intermediateSuburbs.getOrNull(1) ?: "highway"}! Speed reduced."
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (userReport != null) Color(0xFFD81B60).copy(alpha = 0.12f) else Color(0xFFEF4444).copy(alpha = 0.08f),
+                            RoundedCornerShape(10.dp)
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = if (userReport != null) Color(0xFFD81B60).copy(alpha = 0.3f) else Color(0xFFEF4444).copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = activeAlertText,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (userReport != null) Color(0xFFD81B60) else Color(0xFFEF4444)
+                    )
+                }
+
+                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+
+                // Interactive Reporting Interface
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "Report Hazard on Active Route (Live Waze Feed):",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val reportTypes = listOf(
+                            Triple("police", "Police", Color(0xFF1E3A8A)),
+                            Triple("accident", "Accident", Color(0xFFEF4444)),
+                            Triple("roadworks", "Roadworks", Color(0xFFF59E0B)),
+                            Triple("hazard", "Broken Car", Color(0xFF10B981))
+                        )
+
+                        reportTypes.forEach { (type, label, color) ->
+                            Button(
+                                onClick = {
+                                    // Play simulated sound beep
+                                    try {
+                                        val toneGen = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 100)
+                                        toneGen.startTone(android.media.ToneGenerator.TONE_CDMA_PIP, 120)
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                    
+                                    val alertTitle = "Waze $label Report"
+                                    val alertDesc = "Reported by user at ${java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())}. Stay safe!"
+                                    
+                                    userReport = WazeReport(type = if (type == "accident") "hazard" else type, title = alertTitle, desc = alertDesc)
+                                    reportStatusMessage = "$label submitted successfully to Waze Live Feed!"
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(36.dp),
+                                contentPadding = PaddingValues(horizontal = 2.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = color.copy(alpha = 0.12f),
+                                    contentColor = color
+                                ),
+                                border = BorderStroke(1.dp, color.copy(alpha = 0.4f))
+                            ) {
+                                val emoji = when(type) {
+                                    "police" -> "🚓"
+                                    "accident" -> "⚠️"
+                                    "roadworks" -> "🚧"
+                                    else -> "🚗"
+                                }
+                                Text(
+                                    text = "$emoji $label",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (reportStatusMessage != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF10B981).copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                            .border(1.dp, Color(0xFF10B981).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = reportStatusMessage!!,
+                            color = Color(0xFF10B981),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     if (isFoldUnfolded) {
         // Dual-Pane Layout (Row with two Columns)
         Row(
@@ -4798,6 +5885,7 @@ fun MyTripView(
             ) {
                 tripParametersCard()
                 cheapestStopBlock()
+                wazeHudBlock()
             }
             Column(
                 modifier = Modifier
@@ -4821,7 +5909,10 @@ fun MyTripView(
                             onStationClick = onStationClick,
                             userLocation = userLocation,
                             onGpsClick = onGpsClick,
-                            routeStations = routeStationsGeographic
+                            routeStations = cleanRoutePoints,
+                            userReport = userReport,
+                            startSuburb = startSuburb,
+                            endSuburb = endSuburb
                         )
                     }
                 }
@@ -4873,6 +5964,7 @@ fun MyTripView(
         ) {
             item { tripParametersCard() }
             item { cheapestStopBlock() }
+            item { wazeHudBlock() }
             
             // Interactive Route Map item
             item {
@@ -4891,7 +5983,10 @@ fun MyTripView(
                             onStationClick = onStationClick,
                             userLocation = userLocation,
                             onGpsClick = onGpsClick,
-                            routeStations = routeStationsGeographic
+                            routeStations = cleanRoutePoints,
+                            userReport = userReport,
+                            startSuburb = startSuburb,
+                            endSuburb = endSuburb
                         )
                     }
                 }

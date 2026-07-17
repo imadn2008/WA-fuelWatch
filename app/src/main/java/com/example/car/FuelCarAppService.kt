@@ -74,11 +74,22 @@ class FuelListScreen(carContext: androidx.car.app.CarContext) : Screen(carContex
                 .build()
         }
 
+        // Add Waze reporting entry at the top of the list for easy access while driving
+        listBuilder.addItem(
+            Row.Builder()
+                .setTitle("📢 Quick Waze Incident Report")
+                .addText("Report speed traps, hazards, or breakdowns")
+                .setOnClickListener {
+                    screenManager.push(ReportIncidentScreen(carContext))
+                }
+                .build()
+        )
+
         if (stations.isEmpty()) {
-            listBuilder.setNoItemsMessage("No fuel stations found.")
+            // No stations to list
         } else {
-            // Android Auto templates have lists limited to max 6 items
-            stations.take(6).forEach { station ->
+            // Android Auto templates have lists limited to max 6 items total (including our report option)
+            stations.take(5).forEach { station ->
                 val subtitleText = "${station.brand} • ${station.location.uppercase()} • ${station.address}"
                 val priceText = if (station.price > 0.0) "${station.price} ¢/L" else "N/A"
                 
@@ -173,6 +184,55 @@ class FuelDetailScreen(carContext: androidx.car.app.CarContext, private val stat
         return PaneTemplate.Builder(pane)
             .setTitle(station.tradingName)
             .setHeaderAction(Action.BACK)
+            .build()
+    }
+}
+
+class ReportIncidentScreen(carContext: androidx.car.app.CarContext) : Screen(carContext) {
+    override fun onGetTemplate(): Template {
+        val listBuilder = ItemList.Builder()
+        
+        listBuilder.addItem(
+            Row.Builder()
+                .setTitle("🚓 Report Police Speed Trap")
+                .setOnClickListener {
+                    androidx.car.app.CarToast.makeText(carContext, "Police Speed Trap reported successfully!", androidx.car.app.CarToast.LENGTH_SHORT).show()
+                    screenManager.pop()
+                }
+                .build()
+        )
+        listBuilder.addItem(
+            Row.Builder()
+                .setTitle("🚗 Report Breakdown / Accident")
+                .setOnClickListener {
+                    androidx.car.app.CarToast.makeText(carContext, "Breakdown/Accident reported successfully!", androidx.car.app.CarToast.LENGTH_SHORT).show()
+                    screenManager.pop()
+                }
+                .build()
+        )
+        listBuilder.addItem(
+            Row.Builder()
+                .setTitle("⚠️ Report Road Hazard")
+                .setOnClickListener {
+                    androidx.car.app.CarToast.makeText(carContext, "Road hazard reported successfully!", androidx.car.app.CarToast.LENGTH_SHORT).show()
+                    screenManager.pop()
+                }
+                .build()
+        )
+        listBuilder.addItem(
+            Row.Builder()
+                .setTitle("🚧 Report Active Roadworks")
+                .setOnClickListener {
+                    androidx.car.app.CarToast.makeText(carContext, "Roadworks reported successfully!", androidx.car.app.CarToast.LENGTH_SHORT).show()
+                    screenManager.pop()
+                }
+                .build()
+        )
+
+        return ListTemplate.Builder()
+            .setTitle("Waze - Report Incident")
+            .setHeaderAction(Action.BACK)
+            .setSingleList(listBuilder.build())
             .build()
     }
 }

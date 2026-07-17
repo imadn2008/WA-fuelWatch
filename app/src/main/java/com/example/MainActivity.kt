@@ -29,9 +29,18 @@ class MainActivity : ComponentActivity() {
             if (!jsDir.exists()) {
                 jsDir.mkdirs()
             }
+            val jsKeep = java.io.File(jsDir, ".keep")
+            if (!jsKeep.exists()) {
+                jsKeep.createNewFile()
+            }
+            
             val wasmDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/wasm")
             if (!wasmDir.exists()) {
                 wasmDir.mkdirs()
+            }
+            val wasmKeep = java.io.File(wasmDir, ".keep")
+            if (!wasmKeep.exists()) {
+                wasmKeep.createNewFile()
             }
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Error initializing WebView cache folders", e)
