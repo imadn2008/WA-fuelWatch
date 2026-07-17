@@ -12,6 +12,12 @@
     <!-- Declare Wear OS Support -->
     <uses-feature android:name="android.hardware.type.watch" android:required="false" />
 
+    <!-- Query configuration to check for installed 3rd party mapping apps -->
+    <queries>
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.waze" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"

@@ -589,65 +589,263 @@ fun MainFuelScreen(
                 )
             }
 
-            // Navigation Selection Dialog (Built-In GPS vs 3rd Party)
+            // Navigation Selection Dialog with App Detection and Recommendations
             showNavigationSelectorForStation?.let { station ->
                 val context = LocalContext.current
+                val isGoogleMapsInstalled = remember(context) {
+                    try {
+                        context.packageManager.getPackageInfo("com.google.android.apps.maps", 0)
+                        true
+                    } catch (e: Exception) {
+                        false
+                    }
+                }
+                val isWazeInstalled = remember(context) {
+                    try {
+                        context.packageManager.getPackageInfo("com.waze", 0)
+                        true
+                    } catch (e: Exception) {
+                        false
+                    }
+                }
+
                 AlertDialog(
                     onDismissRequest = { showNavigationSelectorForStation = null },
-                    title = { Text("Choose Navigator", fontWeight = FontWeight.Bold) },
-                    text = {
-                        Text("Would you like to use the offline built-in turn-by-turn navigator, or open a 3rd party mapping app like Google Maps?")
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                activeStationForBuiltInNav = station
-                                showNavigationSelectorForStation = null
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                        ) {
-                            Text("Built-In GPS")
+                    title = {
+                        Column {
+                            Text("Navigate to Station", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                text = station.tradingName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     },
-                    dismissButton = {
-                        Button(
-                            onClick = {
-                                try {
-                                    val gmmIntentUri = Uri.parse("google.navigation:q=${station.latitude},${station.longitude}")
-                                    val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri).apply {
-                                        setPackage("com.google.android.apps.maps")
+                    text = {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                "Select a navigation application. Your device has been scanned for compatible apps:",
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+
+                            // 1. Google Maps
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        try {
+                                            if (isGoogleMapsInstalled) {
+                                                val gmmIntentUri = Uri.parse("google.navigation:q=${station.latitude},${station.longitude}")
+                                                val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri).apply {
+                                                    setPackage("com.google.android.apps.maps")
+                                                }
+                                                context.startActivity(mapIntent)
+                                            } else {
+                                                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${station.latitude},${station.longitude}"))
+                                                context.startActivity(webIntent)
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e("Navigation", "Error launching Google Maps: ${e.message}")
+                                        }
+                                        showNavigationSelectorForStation = null
+                                    },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isGoogleMapsInstalled) {
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                                     }
-                                    context.startActivity(mapIntent)
-                                } catch (e: Exception) {
-                                    try {
-                                        val fallbackUri = Uri.parse("geo:${station.latitude},${station.longitude}?q=${Uri.encode(station.tradingName + ", " + station.address)}")
-                                        val fallbackIntent = Intent(Intent.ACTION_VIEW, fallbackUri)
-                                        context.startActivity(fallbackIntent)
-                                    } catch (err: Exception) {
-                                        Log.e("Navigation", "Error fallback routing: ${err.message}")
+                                ),
+                                border = if (isGoogleMapsInstalled) {
+                                    BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                                } else null
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Map,
+                                        contentDescription = "Google Maps",
+                                        tint = if (isGoogleMapsInstalled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text("Google Maps", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                            if (isGoogleMapsInstalled) {
+                                                Text(
+                                                    "Installed • Recommended",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF10B981),
+                                                    modifier = Modifier
+                                                        .background(Color(0xFF10B981).copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+                                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
+                                            } else {
+                                                Text(
+                                                    "Open via Web",
+                                                    fontSize = 10.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier
+                                                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+                                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                        Text("Navigate with real-time Google traffic alerts", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
-                                showNavigationSelectorForStation = null
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                        ) {
-                            Text("3rd Party Map")
+                            }
+
+                            // 2. Waze
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        try {
+                                            if (isWazeInstalled) {
+                                                val wazeUri = Uri.parse("waze://?ll=${station.latitude},${station.longitude}&navigate=yes")
+                                                val mapIntent = Intent(Intent.ACTION_VIEW, wazeUri)
+                                                context.startActivity(mapIntent)
+                                            } else {
+                                                val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.waze"))
+                                                context.startActivity(playStoreIntent)
+                                            }
+                                        } catch (e: Exception) {
+                                            try {
+                                                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.waze"))
+                                                context.startActivity(webIntent)
+                                            } catch (err: Exception) {
+                                                Log.e("Navigation", "Error launching Waze: ${err.message}")
+                                            }
+                                        }
+                                        showNavigationSelectorForStation = null
+                                    },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isWazeInstalled) {
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                    }
+                                ),
+                                border = if (isWazeInstalled) {
+                                    BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                                } else null
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DirectionsCar,
+                                        contentDescription = "Waze Navigation",
+                                        tint = if (isWazeInstalled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text("Waze Navigation", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                            if (isWazeInstalled) {
+                                                Text(
+                                                    "Installed • Recommended",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF10B981),
+                                                    modifier = Modifier
+                                                        .background(Color(0xFF10B981).copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+                                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
+                                            } else {
+                                                Text(
+                                                    "Get on Play Store",
+                                                    fontSize = 10.sp,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier
+                                                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                        Text("Navigate with community-based active road hazards", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+
+                            // 3. System default fallback
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        try {
+                                            val fallbackUri = Uri.parse("geo:${station.latitude},${station.longitude}?q=${Uri.encode(station.tradingName + ", " + station.address)}")
+                                            val fallbackIntent = Intent(Intent.ACTION_VIEW, fallbackUri)
+                                            context.startActivity(fallbackIntent)
+                                        } catch (err: Exception) {
+                                            Log.e("Navigation", "Error launching system map: ${err.message}")
+                                        }
+                                        showNavigationSelectorForStation = null
+                                    },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Explore,
+                                        contentDescription = "System Default Map",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text("System Map App", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                            Text(
+                                                "Always Available",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Text("Open with default device application chooser", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { showNavigationSelectorForStation = null }) {
+                            Text("Cancel")
                         }
                     }
                 )
             }
 
-            // Built-In Turn-by-Turn Navigator Screen
-            activeStationForBuiltInNav?.let { station ->
-                BuiltInNavigatorScreen(
-                    station = station,
-                    userLocation = viewModel.userLocation.collectAsState().value,
-                    onClose = { activeStationForBuiltInNav = null }
-                )
-            }
+            // Built-In Turn-by-Turn Navigator Screen is removed for offline 3rd party recommendation.
 
             if (showThemeSettings) {
                 ThemeSettingsSheet(
