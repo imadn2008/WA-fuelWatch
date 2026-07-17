@@ -40,7 +40,7 @@ class FuelListScreen(carContext: androidx.car.app.CarContext) : Screen(carContex
     private var isLoading = true
 
     private val db = AppDatabase.getDatabase(carContext.applicationContext)
-    private val repository = FuelRepository(db.favoriteStationDao(), OkHttpClient())
+    private val repository = FuelRepository(db.favoriteStationDao(), db.wazeIncidentDao(), OkHttpClient())
 
     init {
         loadData()

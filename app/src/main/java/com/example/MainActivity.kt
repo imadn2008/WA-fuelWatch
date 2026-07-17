@@ -23,25 +23,43 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Proactively initialize Chromium WebView cache directories to prevent opendir (No such file or directory) errors in logs
+        // Proactively initialize Chromium WebView cache directories with full read/write/execute permissions for sandboxed renderer processes
         try {
-            val jsDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/js")
-            if (!jsDir.exists()) {
-                jsDir.mkdirs()
+            fun makeDirAccessibleToAll(file: java.io.File) {
+                if (!file.exists()) {
+                    file.mkdirs()
+                }
+                file.setReadable(true, false)
+                file.setWritable(true, false)
+                file.setExecutable(true, false)
+                
+                // Recursively set readable, writable, and executable on parent directories up to cacheDir
+                var parent = file.parentFile
+                while (parent != null && parent.absolutePath.contains("cache")) {
+                    parent.setReadable(true, false)
+                    parent.setWritable(true, false)
+                    parent.setExecutable(true, false)
+                    parent = parent.parentFile
+                }
             }
+
+            val jsDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/js")
+            makeDirAccessibleToAll(jsDir)
             val jsKeep = java.io.File(jsDir, ".keep")
             if (!jsKeep.exists()) {
                 jsKeep.createNewFile()
             }
+            jsKeep.setReadable(true, false)
+            jsKeep.setWritable(true, false)
             
             val wasmDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/wasm")
-            if (!wasmDir.exists()) {
-                wasmDir.mkdirs()
-            }
+            makeDirAccessibleToAll(wasmDir)
             val wasmKeep = java.io.File(wasmDir, ".keep")
             if (!wasmKeep.exists()) {
                 wasmKeep.createNewFile()
             }
+            wasmKeep.setReadable(true, false)
+            wasmKeep.setWritable(true, false)
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Error initializing WebView cache folders", e)
         }

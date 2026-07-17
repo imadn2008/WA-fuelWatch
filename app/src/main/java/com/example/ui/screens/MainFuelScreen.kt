@@ -68,6 +68,20 @@ fun MainFuelScreen(
     modifier: Modifier = Modifier
 ) {
     val selectedTab by viewModel.selectedTab.collectAsState() // 0 = Trends, 1 = My Trip, 2 = Near Me (Default Map), 3 = Favorites, 4 = Settings
+    val wazeIncidents by viewModel.wazeIncidents.collectAsState()
+    val wazeIncidentsJson = remember(wazeIncidents) {
+        val list = wazeIncidents.map { incident ->
+            JSONObject().apply {
+                put("type", incident.type)
+                put("label", incident.label)
+                put("desc", incident.desc)
+                put("latitude", incident.latitude)
+                put("longitude", incident.longitude)
+            }
+        }
+        org.json.JSONArray(list).toString()
+    }
+
     var activeStationForDetails by remember { mutableStateOf<FuelStation?>(null) }
     var showThemeSettings by remember { mutableStateOf(false) }
     var showFuelWatchInfoDialog by remember { mutableStateOf(false) }
@@ -512,7 +526,11 @@ fun MainFuelScreen(
                                 suburbs = viewModel.allSuburbs.collectAsState().value,
                                 stats = stats,
                                 userLocation = viewModel.userLocation.collectAsState().value,
-                                onGpsClick = { viewModel.updateUserLocation() }
+                                onGpsClick = { viewModel.updateUserLocation() },
+                                wazeIncidentsJson = wazeIncidentsJson,
+                                onReportIncident = { type, label, desc, lat, lng ->
+                                    viewModel.addWazeIncident(type, label, desc, lat, lng)
+                                }
                             )
                             3 -> FavoritesListView(
                                 favoriteStations = favorites,
@@ -1864,13 +1882,20 @@ fun FuelMapView(
     routeStations: List<FuelStation> = emptyList(),
     userReport: WazeReport? = null,
     startSuburb: String = "",
-    endSuburb: String = ""
+    endSuburb: String = "",
+    wazeIncidentsJson: String = "",
+    onReportIncident: ((type: String, label: String, desc: String, lat: Double, lng: Double) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val isDark = MaterialTheme.colorScheme.background.red < 0.5f
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    LaunchedEffect(wazeIncidentsJson, webViewRef) {
+        val escaped = wazeIncidentsJson.replace("'", "\\'")
+        webViewRef?.evaluateJavascript("if (window.loadWazeIncidents) { window.loadWazeIncidents('$escaped'); }", null)
+    }
+
     var forceCenterTrigger by remember { mutableStateOf(0) }
-    var showReportDialog by remember { mutableStateOf(false) }
 
     // Request launcher for GPS location permission
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -2451,14 +2476,17 @@ fun FuelMapView(
                     });
                 }
                 
-                window.addWazeReport = function(type, label, desc, lat, lng) {
+                window.wazeAlertMarkers = window.wazeAlertMarkers || [];
+                window.addWazeReport = function(type, label, desc, lat, lng, isFromUser) {
                     if (!window.mapInstance) return;
                     try {
                         var targetLat = lat || window.currentCenter[0];
                         var targetLng = lng || window.currentCenter[1];
                         
-                        targetLat += (Math.random() - 0.5) * 0.0003;
-                        targetLng += (Math.random() - 0.5) * 0.0003;
+                        if (isFromUser) {
+                            targetLat += (Math.random() - 0.5) * 0.0003;
+                            targetLng += (Math.random() - 0.5) * 0.0003;
+                        }
                         
                         var wazeIcon = createWazeIcon(type);
                         var marker = L.marker([targetLat, targetLng], { icon: wazeIcon }).addTo(window.mapInstance);
@@ -2466,11 +2494,38 @@ fun FuelMapView(
                                            "<strong style='color:#E11D48;display:block;margin-bottom:4px;'>" + label + "</strong>" +
                                            "<span style='font-size:11px;color:#333;'>" + desc + "</span>" +
                                            "</div>";
-                        marker.bindPopup(popupContent).openPopup();
+                        marker.bindPopup(popupContent);
+                        if (isFromUser) {
+                            marker.openPopup();
+                        }
                         window.wazeAlertMarkers.push(marker);
-                        window.mapInstance.setView([targetLat, targetLng], 14);
+                        if (isFromUser) {
+                            window.mapInstance.setView([targetLat, targetLng], 14);
+                            if (window.AndroidInterface && window.AndroidInterface.onReportAdded) {
+                                window.AndroidInterface.onReportAdded(type, label, desc, targetLat, targetLng);
+                            }
+                        }
                     } catch(e) {
                         console.error("Custom alert draw error: " + e.message);
+                    }
+                };
+
+                window.loadWazeIncidents = function(incidentsJson) {
+                    if (!window.mapInstance) return;
+                    try {
+                        if (window.wazeAlertMarkers && window.wazeAlertMarkers.length > 0) {
+                            window.wazeAlertMarkers.forEach(function(m) {
+                                window.mapInstance.removeLayer(m);
+                            });
+                        }
+                        window.wazeAlertMarkers = [];
+                        
+                        var list = JSON.parse(incidentsJson);
+                        list.forEach(function(item) {
+                            window.addWazeReport(item.type, item.label, item.desc, item.latitude, item.longitude, false);
+                        });
+                    } catch(e) {
+                        console.error("Failed to load Waze incidents: " + e.message);
                     }
                 };
                 
@@ -2704,6 +2759,13 @@ fun FuelMapView(
                                 Log.e("FuelMapView", "Error handling JS marker click callback: ${e.message}")
                             }
                         }
+
+                        @android.webkit.JavascriptInterface
+                        fun onReportAdded(type: String, label: String, desc: String, lat: Double, lng: Double) {
+                            post {
+                                onReportIncident?.invoke(type, label, desc, lat, lng)
+                            }
+                        }
                     }, "AndroidInterface")
 
                     tag = isDark
@@ -2734,7 +2796,7 @@ fun FuelMapView(
                 .testTag("web_map")
         )
 
-        // GPS and Waze Report Buttons overlay
+        // GPS Button overlay
         Row(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -2742,22 +2804,6 @@ fun FuelMapView(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Report button (Waze Style)
-            FloatingActionButton(
-                onClick = { showReportDialog = true },
-                containerColor = Color(0xFFE11D48), // Waze/Alert Rose red
-                contentColor = Color.White,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("waze_report_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Campaign,
-                    contentDescription = "Report Road Alert",
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-
             if (onGpsClick != null) {
                 FloatingActionButton(
                     onClick = {
@@ -2797,157 +2843,6 @@ fun FuelMapView(
             }
         }
 
-        // Real-time Road incident reporting dialog
-        if (showReportDialog) {
-            AlertDialog(
-                onDismissRequest = { showReportDialog = false },
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = Color(0xFFE11D48),
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Report Road Incident", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    }
-                },
-                text = {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            "Help fellow drivers by reporting hazards, police speed traps, or breakdowns in real-time.",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        
-                        // Option 1: Police
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val lat = userLocation?.latitude ?: -31.9505
-                                    val lng = userLocation?.longitude ?: 115.8605
-                                    webViewRef?.evaluateJavascript(
-                                        "if (window.addWazeReport) { window.addWazeReport('police', 'Police Speed Trap', 'Mobile radar/speed trap reported by user.', $lat, $lng); }",
-                                        null
-                                    )
-                                    showReportDialog = false
-                                    android.widget.Toast.makeText(context, "Police Speed Trap reported!", android.widget.Toast.LENGTH_SHORT).show()
-                                },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("🚓", fontSize = 24.sp)
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text("Police Speed Trap", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                    Text("Report speed traps, cameras, or police presence", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-
-                        // Option 2: Car / Accident
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val lat = userLocation?.latitude ?: -31.9505
-                                    val lng = userLocation?.longitude ?: 115.8605
-                                    webViewRef?.evaluateJavascript(
-                                        "if (window.addWazeReport) { window.addWazeReport('car', 'Vehicle Breakdown', 'Broken down vehicle or collision reported by user.', $lat, $lng); }",
-                                        null
-                                    )
-                                    showReportDialog = false
-                                    android.widget.Toast.makeText(context, "Road incident reported!", android.widget.Toast.LENGTH_SHORT).show()
-                                },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("🚗", fontSize = 24.sp)
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text("Breakdown / Accident", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                    Text("Report a broken down vehicle or road collision", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-
-                        // Option 3: Hazard
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val lat = userLocation?.latitude ?: -31.9505
-                                    val lng = userLocation?.longitude ?: 115.8605
-                                    webViewRef?.evaluateJavascript(
-                                        "if (window.addWazeReport) { window.addWazeReport('hazard', 'Road Hazard', 'Dangerous debris, pothole, or obstruction reported.', $lat, $lng); }",
-                                        null
-                                    )
-                                    showReportDialog = false
-                                    android.widget.Toast.makeText(context, "Road Hazard reported!", android.widget.Toast.LENGTH_SHORT).show()
-                                },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("⚠️", fontSize = 24.sp)
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text("Road Hazard", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                    Text("Report potholes, animals, or debris on the road", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-
-                        // Option 4: Roadworks
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val lat = userLocation?.latitude ?: -31.9505
-                                    val lng = userLocation?.longitude ?: 115.8605
-                                    webViewRef?.evaluateJavascript(
-                                        "if (window.addWazeReport) { window.addWazeReport('roadworks', 'Active Roadworks', 'Roadworks/construction zone reported.', $lat, $lng); }",
-                                        null
-                                    )
-                                    showReportDialog = false
-                                    android.widget.Toast.makeText(context, "Roadworks reported!", android.widget.Toast.LENGTH_SHORT).show()
-                                },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("🚧", fontSize = 24.sp)
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text("Roadworks", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                    Text("Report construction or speed limit reductions", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showReportDialog = false }) {
-                        Text("Close")
-                    }
-                }
-            )
-        }
     }
 }
 
@@ -5885,7 +5780,6 @@ fun MyTripView(
             ) {
                 tripParametersCard()
                 cheapestStopBlock()
-                wazeHudBlock()
             }
             Column(
                 modifier = Modifier
@@ -5964,7 +5858,6 @@ fun MyTripView(
         ) {
             item { tripParametersCard() }
             item { cheapestStopBlock() }
-            item { wazeHudBlock() }
             
             // Interactive Route Map item
             item {
@@ -6134,7 +6027,9 @@ fun NearMeView(
     suburbs: List<String>,
     stats: PricingStats,
     userLocation: Location? = null,
-    onGpsClick: (() -> Unit)? = null
+    onGpsClick: (() -> Unit)? = null,
+    wazeIncidentsJson: String = "",
+    onReportIncident: ((type: String, label: String, desc: String, lat: Double, lng: Double) -> Unit)? = null
 ) {
     if (isFoldUnfolded) {
         // Unfolded Foldable (Dual-Pane) Layout
@@ -6187,7 +6082,9 @@ fun NearMeView(
                     onStationClick = onStationClick,
                     userLocation = userLocation,
                     onGpsClick = onGpsClick,
-                    selectedSuburb = selectedSuburb
+                    selectedSuburb = selectedSuburb,
+                    wazeIncidentsJson = wazeIncidentsJson,
+                    onReportIncident = onReportIncident
                 )
             }
         }
@@ -6217,7 +6114,9 @@ fun NearMeView(
                         onStationClick = onStationClick,
                         userLocation = userLocation,
                         onGpsClick = onGpsClick,
-                        selectedSuburb = selectedSuburb
+                        selectedSuburb = selectedSuburb,
+                        wazeIncidentsJson = wazeIncidentsJson,
+                        onReportIncident = onReportIncident
                     )
                 } else {
                     FuelListView(

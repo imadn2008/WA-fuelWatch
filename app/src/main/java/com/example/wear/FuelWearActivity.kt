@@ -36,7 +36,7 @@ class FuelWearActivity : ComponentActivity() {
 fun WearFuelScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val db = remember { AppDatabase.getDatabase(context.applicationContext) }
-    val repository = remember { FuelRepository(db.favoriteStationDao(), OkHttpClient()) }
+    val repository = remember { FuelRepository(db.favoriteStationDao(), db.wazeIncidentDao(), OkHttpClient()) }
     
     var cheapestStation by remember { mutableStateOf<FuelStation?>(null) }
     var isLoading by remember { mutableStateOf(true) }

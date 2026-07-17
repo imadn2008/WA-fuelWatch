@@ -3,6 +3,8 @@ package com.example.data.repository
 import android.util.Log
 import com.example.data.database.FavoriteStationDao
 import com.example.data.database.FavoriteStationEntity
+import com.example.data.database.WazeIncidentDao
+import com.example.data.database.WazeIncidentEntity
 import com.example.data.model.FuelStation
 import com.example.data.network.FuelWatchParser
 import kotlinx.coroutines.Dispatchers
@@ -17,9 +19,27 @@ import java.io.IOException
 
 class FuelRepository(
     private val favoriteStationDao: FavoriteStationDao,
+    private val wazeIncidentDao: WazeIncidentDao,
     private val okHttpClient: OkHttpClient = OkHttpClient()
 ) {
     private val TAG = "FuelRepository"
+
+    val wazeIncidents: Flow<List<WazeIncidentEntity>> = wazeIncidentDao.getAllIncidents()
+
+    suspend fun addWazeIncident(incident: WazeIncidentEntity) = withContext(Dispatchers.IO) {
+        wazeIncidentDao.insertIncident(incident)
+        Log.d(TAG, "Added Waze incident in DB: ${incident.label} (${incident.type}) at ${incident.latitude}, ${incident.longitude}")
+    }
+
+    suspend fun removeWazeIncident(id: Int) = withContext(Dispatchers.IO) {
+        wazeIncidentDao.deleteIncidentById(id)
+        Log.d(TAG, "Removed Waze incident from DB ID: $id")
+    }
+
+    suspend fun clearOldWazeIncidents(thresholdTime: Long) = withContext(Dispatchers.IO) {
+        wazeIncidentDao.clearOldIncidents(thresholdTime)
+        Log.d(TAG, "Cleared Waze incidents older than: $thresholdTime")
+    }
 
     val favoriteStations: Flow<List<FuelStation>> = favoriteStationDao.getAllFavorites()
         .map { entities ->

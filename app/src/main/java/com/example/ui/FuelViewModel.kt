@@ -79,7 +79,40 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val db = AppDatabase.getDatabase(application)
-    private val repository = FuelRepository(db.favoriteStationDao(), OkHttpClient())
+    private val repository = FuelRepository(db.favoriteStationDao(), db.wazeIncidentDao(), OkHttpClient())
+
+    val wazeIncidents: StateFlow<List<com.example.data.database.WazeIncidentEntity>> = repository.wazeIncidents
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    fun addWazeIncident(type: String, label: String, desc: String, latitude: Double, longitude: Double) {
+        viewModelScope.launch {
+            val incident = com.example.data.database.WazeIncidentEntity(
+                type = type,
+                label = label,
+                desc = desc,
+                latitude = latitude,
+                longitude = longitude
+            )
+            repository.addWazeIncident(incident)
+        }
+    }
+
+    fun removeWazeIncident(id: Int) {
+        viewModelScope.launch {
+            repository.removeWazeIncident(id)
+        }
+    }
+
+    fun clearOldIncidents() {
+        viewModelScope.launch {
+            val fourHoursAgo = System.currentTimeMillis() - (4 * 60 * 60 * 1000)
+            repository.clearOldWazeIncidents(fourHoursAgo)
+        }
+    }
 
     // UI Input States
     private val _selectedProduct = MutableStateFlow(
@@ -253,6 +286,7 @@ class FuelViewModel(application: Application) : AndroidViewModel(application) {
     init {
         // Fetch initially
         refreshFuelPrices()
+        clearOldIncidents()
         
         // Listen to favorite updates
         viewModelScope.launch {
