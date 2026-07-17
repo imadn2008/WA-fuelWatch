@@ -9,9 +9,6 @@
     <uses-permission android:name="androidx.car.app.MAP_TEMPLATES" />
     <uses-permission android:name="androidx.car.app.NAVIGATION_TEMPLATES" />
 
-    <!-- Declare Wear OS Support -->
-    <uses-feature android:name="android.hardware.type.watch" android:required="false" />
-
     <!-- Query configuration to check for installed 3rd party mapping apps -->
     <queries>
         <package android:name="com.google.android.apps.maps" />
@@ -43,14 +40,6 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
-
-        <!-- Wear OS Activity Entrypoint -->
-        <activity
-            android:name=".wear.FuelWearActivity"
-            android:exported="false"
-            android:label="Fuel Watch Wear"
-            android:theme="@style/Theme.MyApplication">
         </activity>
 
         <!-- Android Auto Support Service -->
