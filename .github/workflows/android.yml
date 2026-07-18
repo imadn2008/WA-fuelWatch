@@ -2,38 +2,53 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ "main", "master" ] # Triggers the build whenever you push to main or master
+    branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
-  workflow_dispatch: # Allows you to manually trigger the build from the Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check out the repository code onto the virtual machine
       - name: Checkout Source Code
-        uses: actions/checkout@v4
+        # Updated to v7 to use the latest Node runtime environments
+        uses: actions/checkout@v7
 
-      # Step 2: Set up the Java Development Kit (JDK) required by Gradle
+      - name: Find Gradle Root Directory
+        id: find-gradle
+        run: |
+          GRADLE_PATH=$(find . -name gradlew -print -quit)
+          if [ -z "$GRADLE_PATH" ]; then
+            echo "Error: gradlew file not found anywhere in the repository."
+            exit 1
+          fi
+          GRADLE_DIR=$(dirname "$GRADLE_PATH")
+          echo "dir=$GRADLE_DIR" >> $GITHUB_OUTPUT
+          echo "Found Gradle root at: $GRADLE_DIR"
+
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        # Updated to v5 to utilize Node 24 support natively
+        uses: actions/setup-java@v5
         with:
-          java-version: '21'
+          java-version: '17'
           distribution: 'temurin'
           cache: gradle
 
-      # Step 3: Fix permissions to ensure the runner can execute the Gradle wrapper
       - name: Change Gradle Wrapper Permissions
-        run: chmod +x gradlew
+        run: chmod +x ${{ steps.find-gradle.outputs.dir }}/gradlew
 
-      # Step 4: Run the Gradle compile command to generate a debug APK
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
+        run: |
+          cd ${{ steps.find-gradle.outputs.dir }}
+          ./gradlew assembleDebug
 
-      # Step 5: Extract the compiled APK file and make it available for download
-      - name: Upload Compiled APK
+      - name: Find and Upload Compiled APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: "**/build/outputs/apk/debug/*.apk"
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
