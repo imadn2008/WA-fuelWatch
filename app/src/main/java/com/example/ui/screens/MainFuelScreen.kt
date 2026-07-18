@@ -1851,7 +1851,16 @@ fun BrandLogo(brand: String, modifier: Modifier = Modifier) {
         modifier = modifier
             .size(44.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(if (logoResId != null) Color.White else getBrandColor(brand)),
+            .background(if (logoResId != null) Color.White else getBrandColor(brand))
+            .then(
+                if (logoResId != null) {
+                    Modifier.border(
+                        width = 1.dp,
+                        color = Color.Black.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                } else Modifier
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (logoResId != null) {
@@ -3305,21 +3314,30 @@ fun StationDetailsSheet(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = station.tradingName,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 22.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = station.brand,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.secondary,
-                            fontWeight = FontWeight.Medium
-                        )
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BrandLogo(brand = station.brand, modifier = Modifier.size(52.dp))
+                        Column {
+                            Text(
+                                text = station.tradingName,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 20.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = station.brand,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
 
                     // Price display
@@ -3448,17 +3466,20 @@ fun StationDetailsSheet(
 
 // Helper to resolve brand colors to add visual flair to the cards
 fun getBrandColor(brandName: String): Color {
-    return when (brandName.lowercase()) {
-        "bp" -> Color(0xFF008542) // Green/yellow
-        "shell" -> Color(0xFFFCD116) // Shell Yellow
-        "ampol" -> Color(0xFF003882) // Ampol Blue
-        "coles express" -> Color(0xFFD11215) // Coles Red
-        "7-eleven" -> Color(0xFF008060) // 7-Eleven Teal
-        "united" -> Color(0xFF00509E) // United Blue
-        "puma" -> Color(0xFFE21836) // Puma Red
-        "liberty" -> Color(0xFF004B87) // Liberty Blue
-        "vibe" -> Color(0xFF7A2A85) // Vibe Purple
-        else -> Color(0xFF6200EE) // Fallback default purple
+    val b = brandName.lowercase()
+    return when {
+        b.contains("bp") -> Color(0xFF008542) // Green/yellow
+        b.contains("shell") -> Color(0xFFFCD116) // Shell Yellow
+        b.contains("ampol") -> Color(0xFF003882) // Ampol Blue
+        b.contains("caltex") -> Color(0xFFE21836) // Caltex Red
+        b.contains("coles") -> Color(0xFFD11215) // Coles Red
+        b.contains("7-eleven") || b.contains("seven") || b.contains("7eleven") || b.contains("7- eleven") || b.contains("7 eleven") -> Color(0xFF008060) // 7-Eleven Teal
+        b.contains("united") -> Color(0xFF00509E) // United Blue
+        b.contains("puma") -> Color(0xFFE21836) // Puma Red
+        b.contains("liberty") -> Color(0xFF004B87) // Liberty Blue
+        b.contains("vibe") -> Color(0xFF7A2A85) // Vibe Purple
+        b.contains("gull") -> Color(0xFF00A15C) // Gull Green
+        else -> Color(0xFF1E293B) // Slate Dark for default
     }
 }
 
