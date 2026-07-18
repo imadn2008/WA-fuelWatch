@@ -1,0 +1,40 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ] # Triggers the build whenever you push to main or master
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # Allows you to manually trigger the build from the Actions tab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out the repository code onto the virtual machine
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up the Java Development Kit (JDK) required by Gradle
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      # Step 3: Fix permissions to ensure the runner can execute the Gradle wrapper
+      - name: Change Gradle Wrapper Permissions
+        run: chmod +x gradlew
+
+      # Step 4: Run the Gradle compile command to generate a debug APK
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
+
+      # Step 5: Extract the compiled APK file and make it available for download
+      - name: Upload Compiled APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
