@@ -79,9 +79,16 @@ dependencies {
   // implementation(libs.androidx.camera.core)
   // implementation(libs.androidx.camera.lifecycle)
   // implementation(libs.androidx.camera.view)
-  implementation(libs.androidx.compose.material.icons.core)
-  implementation(libs.androidx.compose.material.icons.extended)
-  implementation(libs.androidx.compose.material3)
+  // Latest Core Material 3 Stable Library
+  implementation("androidx.compose.material3:material3:1.4.0")
+  
+  // Includes standard Material Icons & Symbols
+  implementation("androidx.compose.material:material-icons-core")
+  // Expanded icon library for full icon suite
+  implementation("androidx.compose.material:material-icons-extended:1.7.0") 
+  
+  // Adaptive Layout Support (List-Detail Pane & Navigation)
+  implementation("androidx.compose.material3.adaptive:adaptive:1.0.0")
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.graphics)
   implementation(libs.androidx.compose.ui.tooling.preview)

@@ -15,6 +15,9 @@ import android.webkit.WebSettings
 import android.webkit.WebChromeClient
 import android.webkit.ConsoleMessage
 import androidx.compose.animation.*
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -60,6 +63,11 @@ import com.example.ui.DesignStyle
 import com.example.ui.ThemeColor
 import com.example.ui.theme.getThemeColors
 import org.json.JSONObject
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.Path
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1791,6 +1799,84 @@ fun SearchBarAndFilters(
 
 // 3. Station Card Item
 @Composable
+fun FeatureBadge(feature: String) {
+    val trimmed = feature.trim()
+    val (icon, label) = when {
+        trimmed.contains("24", ignoreCase = true) -> "⏱️" to "24H"
+        trimmed.contains("atm", ignoreCase = true) -> "🏦" to "ATM"
+        trimmed.contains("cafe", ignoreCase = true) || trimmed.contains("coffee", ignoreCase = true) -> "☕" to "Cafe"
+        trimmed.contains("wash", ignoreCase = true) -> "🧼" to "Wash"
+        trimmed.contains("store", ignoreCase = true) || trimmed.contains("shop", ignoreCase = true) -> "🏪" to "Shop"
+        trimmed.contains("food", ignoreCase = true) || trimmed.contains("mcdonald", ignoreCase = true) -> "🍔" to "Food"
+        trimmed.contains("toilet", ignoreCase = true) || trimmed.contains("restroom", ignoreCase = true) -> "🚻" to "Toilet"
+        trimmed.contains("truck", ignoreCase = true) -> "🚛" to "Trucks"
+        else -> "🔹" to trimmed.take(12)
+    }
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)),
+        modifier = Modifier.padding(end = 4.dp, bottom = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(text = icon, fontSize = 10.sp)
+            Text(text = label, style = MaterialTheme.typography.labelSmall, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+@Composable
+fun BrandLogo(brand: String, modifier: Modifier = Modifier) {
+    val brandLower = brand.lowercase()
+    val logoResId = when {
+        brandLower.contains("bp") -> com.example.R.drawable.ic_brand_bp
+        brandLower.contains("shell") -> com.example.R.drawable.ic_brand_shell
+        brandLower.contains("ampol") -> com.example.R.drawable.ic_brand_ampol
+        brandLower.contains("caltex") -> com.example.R.drawable.ic_brand_caltex
+        brandLower.contains("7-eleven") || brandLower.contains("seven") || brandLower.contains("7eleven") || brandLower.contains("7 eleven") -> com.example.R.drawable.ic_brand_7eleven
+        brandLower.contains("coles") -> com.example.R.drawable.ic_brand_coles
+        brandLower.contains("puma") -> com.example.R.drawable.ic_brand_puma
+        brandLower.contains("united") -> com.example.R.drawable.ic_brand_united
+        brandLower.contains("liberty") -> com.example.R.drawable.ic_brand_liberty
+        brandLower.contains("gull") -> com.example.R.drawable.ic_brand_gull
+        brandLower.contains("vibe") -> com.example.R.drawable.ic_brand_vibe
+        else -> null
+    }
+
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (logoResId != null) Color.White else getBrandColor(brand)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (logoResId != null) {
+            Image(
+                painter = painterResource(id = logoResId),
+                contentDescription = "$brand Logo",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(if (brandLower.contains("bp") || brandLower.contains("7-eleven") || brandLower.contains("seven") || brandLower.contains("vibe") || brandLower.contains("ampol")) 0.dp else 4.dp),
+                contentScale = ContentScale.Fit
+            )
+        } else {
+            Text(
+                text = brand.take(2).uppercase(),
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                fontSize = 14.sp
+            )
+        }
+    }
+}
+
+// 3. Station Card Item
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
 fun FuelStationCard(
     station: FuelStation,
     isFavorite: Boolean,
@@ -1814,35 +1900,22 @@ fun FuelStationCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Brand Badge Icon Placeholder
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(getBrandColor(station.brand)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = station.brand.take(2).uppercase(),
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontSize = 14.sp
-                    )
-                }
+                // Brand Badge Icon
+                BrandLogo(brand = station.brand)
 
                 // Station details
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = station.tradingName,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -1855,9 +1928,11 @@ fun FuelStationCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(top = 2.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Place,
@@ -1870,6 +1945,37 @@ fun FuelStationCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        
+                        if (station.phone.isNotBlank()) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.Default.Phone,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = station.phone,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Site Features List
+                    val features = remember(station.siteFeatures) {
+                        if (station.siteFeatures.isBlank()) emptyList()
+                        else station.siteFeatures.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                    }
+                    if (features.isNotEmpty()) {
+                        FlowRow(
+                            modifier = Modifier.padding(top = 6.dp),
+                            maxItemsInEachRow = Int.MAX_VALUE
+                        ) {
+                            features.take(4).forEach { feature ->
+                                FeatureBadge(feature = feature)
+                            }
+                        }
                     }
                 }
             }
@@ -1877,7 +1983,8 @@ fun FuelStationCard(
             // Price & Favorite Trigger
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(start = 4.dp)
             ) {
                 // Price text (e.g. 195.9)
                 if (station.price > 0.0) {
@@ -1885,8 +1992,9 @@ fun FuelStationCard(
                         Text(
                             text = "${station.price}",
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 20.sp,
-                            color = MaterialTheme.colorScheme.primary
+                            fontSize = 19.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1
                         )
                         Text(
                             text = "cents/L",
@@ -1906,12 +2014,15 @@ fun FuelStationCard(
                 // Star / Watchlist favorite toggle
                 IconButton(
                     onClick = onFavoriteToggle,
-                    modifier = Modifier.testTag("favorite_toggle_${station.id}")
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("favorite_toggle_${station.id}")
                 ) {
                     Icon(
                         imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                         contentDescription = "Toggle Watchlist",
-                        tint = if (isFavorite) Color(0xFFE91E63) else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (isFavorite) Color(0xFFE91E63) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -2817,57 +2928,50 @@ fun FuelMapView(
                         routeWeight = 5;
                     }
                     
-                    // High-fidelity highway coordinates for popular routes!
-                    var finalPoints = latLngs;
-                    var sSub = (startSub || '').toUpperCase();
-                    var eSub = (endSub || '').toUpperCase();
-                    
-                    if (sSub === 'PERTH' && eSub === 'MANDURAH') {
-                        finalPoints = [
-                            [-31.953, 115.857],
-                            [-31.974, 115.853],
-                            [-32.006, 115.852],
-                            [-32.031, 115.845],
-                            [-32.056, 115.847],
-                            [-32.115, 115.849],
-                            [-32.164, 115.848],
-                            [-32.247, 115.851],
-                            [-32.339, 115.858],
-                            [-32.440, 115.847],
-                            [-32.536, 115.742]
-                        ];
-                    } else if (sSub === 'PERTH' && eSub === 'JOONDALUP') {
-                        finalPoints = [
-                            [-31.953, 115.857],
-                            [-31.936, 115.842],
-                            [-31.905, 115.815],
-                            [-31.888, 115.807],
-                            [-31.870, 115.795],
-                            [-31.821, 115.782],
-                            [-31.792, 115.776],
-                            [-31.744, 115.766]
-                        ];
-                    }
-                    
-                    var smoothLatLngs = generateSmoothRoute(finalPoints);
-                    
-                    window.routePolyline = L.polyline(smoothLatLngs, {
-                        color: routeColor,
-                        weight: routeWeight,
-                        opacity: 0.85,
-                        lineJoin: 'round'
-                    }).addTo(window.mapInstance);
-                    
-                    if (routePointsChanged) {
-                        try {
-                            var bounds = L.latLngBounds(smoothLatLngs);
-                            window.mapInstance.fitBounds(bounds, { padding: [50, 50] });
-                            window.hasSetInitialView = true;
-                        } catch (e) {
-                            console.error(e);
+                    function renderPath(finalPoints) {
+                        if (window.routePolyline) {
+                            window.mapInstance.removeLayer(window.routePolyline);
                         }
-                        drawWazeAlerts(smoothLatLngs);
+                        window.routePolyline = L.polyline(finalPoints, {
+                            color: routeColor,
+                            weight: routeWeight,
+                            opacity: 0.85,
+                            lineJoin: 'round'
+                        }).addTo(window.mapInstance);
+                        
+                        if (routePointsChanged) {
+                            try {
+                                var bounds = L.latLngBounds(finalPoints);
+                                window.mapInstance.fitBounds(bounds, { padding: [50, 50] });
+                                window.hasSetInitialView = true;
+                            } catch (e) {
+                                console.error(e);
+                            }
+                            drawWazeAlerts(finalPoints);
+                        }
                     }
+
+                    // Build OSRM navigation driving route query from start, intermediates, to end suburb centers
+                    var coordsQuery = latLngs.map(function(p) { return p[1] + "," + p[0]; }).join(";");
+                    var osrmUrl = "https://router.project-osrm.org/route/v1/driving/" + coordsQuery + "?overview=full&geometries=geojson";
+                    
+                    fetch(osrmUrl)
+                        .then(function(res) { return res.json(); })
+                        .then(function(data) {
+                            if (data.routes && data.routes.length > 0 && data.routes[0].geometry) {
+                                var geojson = data.routes[0].geometry;
+                                var realRouteLatLngs = geojson.coordinates.map(function(c) {
+                                    return [c[1], c[0]]; // convert to [lat, lng]
+                                });
+                                renderPath(realRouteLatLngs);
+                            } else {
+                                renderPath(latLngs);
+                            }
+                        })
+                        .catch(function(err) {
+                            console.error("OSRM error, falling back: " + err);
+                            renderPath(latLngs);
+                        });
                 }
 
                 function loadMarkers(stations) {
@@ -3792,10 +3896,6 @@ fun SettingsAndInfoView(
                 item {
                     DriverProfileCard(
                         userId = userId,
-                        userName = userName,
-                        onUserNameChange = onUserNameChange,
-                        userCarType = userCarType,
-                        onUserCarTypeChange = onUserCarTypeChange,
                         userInstalledAt = userInstalledAt,
                         selectedFuelProduct = selectedFuelProduct,
                         onSelectedFuelProductSelect = onSelectedFuelProductSelect,
@@ -4245,10 +4345,6 @@ fun SettingsAndInfoView(
             item {
                 DriverProfileCard(
                     userId = userId,
-                    userName = userName,
-                    onUserNameChange = onUserNameChange,
-                    userCarType = userCarType,
-                    onUserCarTypeChange = onUserCarTypeChange,
                     userInstalledAt = userInstalledAt,
                     selectedFuelProduct = selectedFuelProduct,
                     onSelectedFuelProductSelect = onSelectedFuelProductSelect,
@@ -4808,14 +4904,10 @@ fun DonationDialog(
     )
 }
 
-// Inline Driver Profile Configuration Card
+// Inline User Settings & Configuration Card
 @Composable
 fun DriverProfileCard(
     userId: String,
-    userName: String,
-    onUserNameChange: (String) -> Unit,
-    userCarType: String,
-    onUserCarTypeChange: (String) -> Unit,
     userInstalledAt: String,
     selectedFuelProduct: FuelProduct,
     onSelectedFuelProductSelect: (FuelProduct) -> Unit,
@@ -4841,7 +4933,7 @@ fun DriverProfileCard(
                     modifier = Modifier.size(24.dp)
                 )
                 Text(
-                    text = "Driver Profile & Vehicle",
+                    text = "User Settings & Profile ID",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -4849,31 +4941,9 @@ fun DriverProfileCard(
             }
 
             Text(
-                text = "Your profile settings are saved locally on this device and personalize your fuel-tracking experience.",
+                text = "Your personalized settings and unique profile ID are safely stored locally on this device.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            // Driver Name
-            OutlinedTextField(
-                value = userName,
-                onValueChange = onUserNameChange,
-                label = { Text("Driver Name / Nickname") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                leadingIcon = { Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(18.dp)) }
-            )
-
-            // Vehicle Type
-            OutlinedTextField(
-                value = userCarType,
-                onValueChange = onUserCarTypeChange,
-                label = { Text("Vehicle Type / Car Model") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                leadingIcon = { Icon(Icons.Default.LocalGasStation, null, modifier = Modifier.size(18.dp)) }
             )
 
             // Preferred Default Fuel Product dropdown
@@ -5493,20 +5563,6 @@ fun MyTripView(
         list.distinct()
     }
 
-    // Filter stations residing on or near the suburbs along the route path
-    val stationsOnRoute = remember(stations, intermediateSuburbs) {
-        stations.filter { station ->
-            intermediateSuburbs.any { suburb -> station.location.equals(suburb, ignoreCase = true) }
-        }.sortedBy { it.price }
-    }
-
-    // Sort route stations geographically along intermediate suburbs for drawing polyline sequentially
-    val routeStationsGeographic = remember(stationsOnRoute, intermediateSuburbs) {
-        intermediateSuburbs.flatMap { suburb ->
-            stationsOnRoute.filter { it.location.equals(suburb, ignoreCase = true) }
-        }
-    }
-
     // Calculate clean, non-zig-zagging route points representing the sequence of suburb centers
     val cleanRoutePoints = remember(intermediateSuburbs, stations) {
         intermediateSuburbs.mapNotNull { suburb ->
@@ -5529,6 +5585,33 @@ fun MyTripView(
                     day = "today"
                 )
             } else null
+        }
+    }
+
+    // Filter stations residing on or near the suburbs along the route path (within 10.0 km of any route hub)
+    val stationsOnRoute = remember(stations, cleanRoutePoints) {
+        if (cleanRoutePoints.isEmpty()) {
+            emptyList()
+        } else {
+            stations.filter { station ->
+                cleanRoutePoints.any { pt ->
+                    val r = 6371.0 // Earth radius in km
+                    val dLat = Math.toRadians(pt.latitude - station.latitude)
+                    val dLon = Math.toRadians(pt.longitude - station.longitude)
+                    val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                            Math.cos(Math.toRadians(station.latitude)) * Math.cos(Math.toRadians(pt.latitude)) *
+                            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+                    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+                    (r * c) <= 10.0 // 10 km corridor
+                }
+            }.sortedBy { it.price }
+        }
+    }
+
+    // Sort route stations geographically along intermediate suburbs for drawing polyline sequentially
+    val routeStationsGeographic = remember(stationsOnRoute, intermediateSuburbs) {
+        intermediateSuburbs.flatMap { suburb ->
+            stationsOnRoute.filter { it.location.equals(suburb, ignoreCase = true) }
         }
     }
 

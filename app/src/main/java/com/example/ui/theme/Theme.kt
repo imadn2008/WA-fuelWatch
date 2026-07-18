@@ -106,6 +106,46 @@ fun getThemeColors(themeColor: ThemeColor, darkTheme: Boolean): Pair<Color, Colo
             if (darkTheme) Pair(Color(0xFF66BB6A), Color(0xFF004D40))
             else Pair(Color(0xFF2E7D32), Color(0xFFE8F5E9))
         }
+        ThemeColor.VIOLET -> {
+            if (darkTheme) Pair(Color(0xFFE040FB), Color(0xFF4A148C))
+            else Pair(Color(0xFF8E24AA), Color(0xFFF3E5F5))
+        }
+        ThemeColor.DEEP_ORANGE -> {
+            if (darkTheme) Pair(Color(0xFFFF8A65), Color(0xFFBF360C))
+            else Pair(Color(0xFFE64A19), Color(0xFFFBE9E7))
+        }
+        ThemeColor.CRIMSON -> {
+            if (darkTheme) Pair(Color(0xFFFF8A80), Color(0xFF880E4F))
+            else Pair(Color(0xFFC2185B), Color(0xFFFCE4EC))
+        }
+        ThemeColor.MINT -> {
+            if (darkTheme) Pair(Color(0xFF80EEB0), Color(0xFF004D40))
+            else Pair(Color(0xFF00A86B), Color(0xFFE8F8F0))
+        }
+        ThemeColor.SKY_BLUE -> {
+            if (darkTheme) Pair(Color(0xFF80D8FF), Color(0xFF006064))
+            else Pair(Color(0xFF0288D1), Color(0xFFE1F5FE))
+        }
+        ThemeColor.COSMIC_BLACK -> {
+            if (darkTheme) Pair(Color(0xFFE0E0E0), Color(0xFF000000))
+            else Pair(Color(0xFF212121), Color(0xFFF5F5F5))
+        }
+        ThemeColor.PEACH -> {
+            if (darkTheme) Pair(Color(0xFFFFCC80), Color(0xFFE65100))
+            else Pair(Color(0xFFFFB74D), Color(0xFFFFF3E0))
+        }
+        ThemeColor.SAKURA_PINK -> {
+            if (darkTheme) Pair(Color(0xFFFFB7C5), Color(0xFF4A121A))
+            else Pair(Color(0xFFF48FB1), Color(0xFFFFF0F3))
+        }
+        ThemeColor.FOREST_GREEN -> {
+            if (darkTheme) Pair(Color(0xFFA5D6A7), Color(0xFF1B5E20))
+            else Pair(Color(0xFF1B5E20), Color(0xFFE8F5E9))
+        }
+        ThemeColor.LAVENDER -> {
+            if (darkTheme) Pair(Color(0xFFB39DDB), Color(0xFF311B92))
+            else Pair(Color(0xFF673AB7), Color(0xFFEDE7F6))
+        }
     }
 }
 

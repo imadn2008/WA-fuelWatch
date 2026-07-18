@@ -28,7 +28,8 @@ enum class DesignStyle {
 }
 
 enum class ThemeColor {
-    BLUE, GREEN, ORANGE, PURPLE, RED, TEAL, AMBER, ROSE, SLATE, CYAN, INDIGO, GOLD, EMERALD
+    BLUE, GREEN, ORANGE, PURPLE, RED, TEAL, AMBER, ROSE, SLATE, CYAN, INDIGO, GOLD, EMERALD,
+    VIOLET, DEEP_ORANGE, CRIMSON, MINT, SKY_BLUE, COSMIC_BLACK, PEACH, SAKURA_PINK, FOREST_GREEN, LAVENDER
 }
 
 class FuelViewModel(application: Application) : AndroidViewModel(application) {
