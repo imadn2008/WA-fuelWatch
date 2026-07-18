@@ -32,7 +32,7 @@ jobs:
         # Updated to v5 to utilize Node 24 support natively
         uses: actions/setup-java@v5
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
           cache: gradle
 
