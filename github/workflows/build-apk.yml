@@ -13,9 +13,9 @@ jobs:
 
     steps:
       - name: Checkout Source Code
-        # Updated to v7 to use the latest Node runtime environments
         uses: actions/checkout@v7
 
+      # Automatically finds the directory containing gradlew dynamically
       - name: Find Gradle Root Directory
         id: find-gradle
         run: |
@@ -29,7 +29,6 @@ jobs:
           echo "Found Gradle root at: $GRADLE_DIR"
 
       - name: Set up JDK 17
-        # Updated to v5 to utilize Node 24 support natively
         uses: actions/setup-java@v5
         with:
           java-version: '17'
@@ -49,19 +48,3 @@ jobs:
         with:
           name: app-debug
           path: "**/build/outputs/apk/debug/*.apk"
-          cache: gradle
-
-      - name: Change Gradle Wrapper Permissions
-        run: chmod +x ${{ steps.find-gradle.outputs.dir }}/gradlew
-
-      - name: Build Debug APK
-        run: |
-          cd ${{ steps.find-gradle.outputs.dir }}
-          ./gradlew assembleDebug
-
-      - name: Find and Upload Compiled APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug
-          path: "**/build/outputs/apk/debug/*.apk"
-
