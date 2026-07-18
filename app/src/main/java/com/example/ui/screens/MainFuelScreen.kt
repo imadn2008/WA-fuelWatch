@@ -1177,6 +1177,42 @@ fun BuiltInNavigatorScreen(
     ) {
         AndroidView(
             factory = { ctx ->
+                // Ensure WebView code cache directories exist to avoid harmless chromium warnings
+                try {
+                    val cacheDir = ctx.cacheDir
+                    val jsDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/js")
+                    val wasmDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/wasm")
+                    
+                    fun setupDir(dir: java.io.File) {
+                        if (!dir.exists()) {
+                            dir.mkdirs()
+                        }
+                        dir.setReadable(true, false)
+                        dir.setWritable(true, false)
+                        dir.setExecutable(true, false)
+                        
+                        val keepFile = java.io.File(dir, ".keep")
+                        if (!keepFile.exists()) {
+                            keepFile.createNewFile()
+                        }
+                        keepFile.setReadable(true, false)
+                        keepFile.setWritable(true, false)
+                        
+                        var parent = dir.parentFile
+                        while (parent != null && parent.absolutePath.contains("cache")) {
+                            parent.setReadable(true, false)
+                            parent.setWritable(true, false)
+                            parent.setExecutable(true, false)
+                            parent = parent.parentFile
+                        }
+                    }
+                    
+                    setupDir(jsDir)
+                    setupDir(wasmDir)
+                } catch (e: Exception) {
+                    android.util.Log.e("MainFuelScreen", "Error pre-creating WebView cache directories", e)
+                }
+
                 WebView(ctx).apply {
                     layoutParams = android.view.ViewGroup.LayoutParams(
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT,
@@ -3021,6 +3057,42 @@ fun FuelMapView(
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
             factory = { ctx ->
+                // Ensure WebView code cache directories exist to avoid harmless chromium warnings
+                try {
+                    val cacheDir = ctx.cacheDir
+                    val jsDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/js")
+                    val wasmDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/wasm")
+                    
+                    fun setupDir(dir: java.io.File) {
+                        if (!dir.exists()) {
+                            dir.mkdirs()
+                        }
+                        dir.setReadable(true, false)
+                        dir.setWritable(true, false)
+                        dir.setExecutable(true, false)
+                        
+                        val keepFile = java.io.File(dir, ".keep")
+                        if (!keepFile.exists()) {
+                            keepFile.createNewFile()
+                        }
+                        keepFile.setReadable(true, false)
+                        keepFile.setWritable(true, false)
+                        
+                        var parent = dir.parentFile
+                        while (parent != null && parent.absolutePath.contains("cache")) {
+                            parent.setReadable(true, false)
+                            parent.setWritable(true, false)
+                            parent.setExecutable(true, false)
+                            parent = parent.parentFile
+                        }
+                    }
+                    
+                    setupDir(jsDir)
+                    setupDir(wasmDir)
+                } catch (e: Exception) {
+                    android.util.Log.e("MainFuelScreen", "Error pre-creating WebView cache directories", e)
+                }
+
                 WebView(ctx).apply {
                     layoutParams = android.view.ViewGroup.LayoutParams(
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT,
