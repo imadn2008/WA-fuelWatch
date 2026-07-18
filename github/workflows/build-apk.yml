@@ -15,10 +15,20 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      # Tells the runner to execute all following steps inside your specific folder
-      - name: Set working directory
-        run: echo "WORKING_DIR=YOUR_SUBFOLDER_NAME" >> $GITHUB_ENV # <-- CHANGE YOUR_SUBFOLDER_NAME HERE
+      # Automatically finds the directory containing gradlew and saves it
+      - name: Find Gradle Root Directory
+        id: find-gradle
+        run: |
+          GRADLE_PATH=$(find . -name gradlew -print -quit)
+          if [ -z "$GRADLE_PATH" ]; then
+            echo "Error: gradlew file not found anywhere in the repository."
+            exit 1
+          fi
+          GRADLE_DIR=$(dirname "$GRADLE_PATH")
+          echo "dir=$GRADLE_DIR" >> $GITHUB_OUTPUT
+          echo "Found Gradle root at: $GRADLE_DIR"
 
+       Caviar Setup: Set up JDK 17
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -27,13 +37,16 @@ jobs:
           cache: gradle
 
       - name: Change Gradle Wrapper Permissions
-        run: chmod +x ./${{ env.WORKING_DIR }}/gradlew
+        run: chmod +x ${{ steps.find-gradle.outputs.dir }}/gradlew
 
       - name: Build Debug APK
-        run: ./${{ env.WORKING_DIR }}/gradlew assembleDebug --project-dir ./${{ env.WORKING_DIR }}
+        run: |
+          cd ${{ steps.find-gradle.outputs.dir }}
+          ./gradlew assembleDebug
 
-      - name: Upload Compiled APK
+      - name: Find and Upload Compiled APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: ./${{ env.WORKING_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          path: "**/build/outputs/apk/debug/*.apk"
+
