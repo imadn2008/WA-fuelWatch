@@ -539,7 +539,7 @@ fun MainFuelScreen(
                                 userLocation = viewModel.userLocation.collectAsState().value,
                                 onGpsClick = { viewModel.updateUserLocation() },
                                 wazeIncidentsJson = wazeIncidentsJson,
-                                onReportIncident = { type, label, desc, lat, lng ->
+                                onReportIncident = { type: String, label: String, desc: String, lat: Double, lng: Double ->
                                     viewModel.addWazeIncident(type, label, desc, lat, lng)
                                 }
                             )
@@ -903,6 +903,7 @@ fun MainFuelScreen(
             }
         }
     }
+}
 }
 
 @Composable
