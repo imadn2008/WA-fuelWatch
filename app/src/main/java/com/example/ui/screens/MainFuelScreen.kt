@@ -1900,8 +1900,8 @@ fun BrandLogo(brand: String, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center
     ) {
         if (logoResId != null) {
-            Image(
-                painter = painterResource(id = logoResId),
+            coil.compose.AsyncImage(
+                model = logoResId,
                 contentDescription = "$brand Logo",
                 modifier = Modifier
                     .fillMaxSize()
