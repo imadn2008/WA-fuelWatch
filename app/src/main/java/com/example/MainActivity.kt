@@ -9,8 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import com.example.ui.FuelViewModel
 import com.example.ui.AppTheme
@@ -79,29 +79,35 @@ class MainActivity : ComponentActivity() {
             notificationManager.createNotificationChannel(channel)
         }
 
-        // Request POST_NOTIFICATIONS on Android 13+
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            val requestPermissionLauncher = registerForActivityResult(
-                androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-            ) { isGranted: Boolean ->
-                if (isGranted) {
-                    android.util.Log.d("MainActivity", "Notification permission granted")
-                } else {
-                    android.util.Log.d("MainActivity", "Notification permission denied")
-                }
+        // Request Location and Notification Permissions
+        val requestPermissionLauncher = registerForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+            val locationGranted = permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] ?: false ||
+                                  permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+            if (locationGranted) {
+                viewModel.updateUserLocation()
             }
-            if (androidx.core.content.ContextCompat.checkSelfPermission(
-                    this,
-                    android.Manifest.permission.POST_NOTIFICATIONS
-                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) {
-                requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            val notificationsGranted = permissions["android.permission.POST_NOTIFICATIONS"] ?: false
+            if (notificationsGranted) {
+                android.util.Log.d("MainActivity", "Notification permission granted")
             }
         }
+        
+        val permissionsToRequest = mutableListOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            permissionsToRequest.add(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        
+        // Launch permission requests
+        requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
 
         setContent {
-            val themeMode by viewModel.themeMode.collectAsState()
-            val themeColor by viewModel.themeColor.collectAsState()
+            val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+            val themeColor by viewModel.themeColor.collectAsStateWithLifecycle()
             val darkTheme = when (themeMode) {
                 AppTheme.SYSTEM -> isSystemInDarkTheme()
                 AppTheme.LIGHT -> false
@@ -112,7 +118,9 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MainFuelScreen(viewModel = viewModel)
+                    @OptIn(androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi::class)
+                    val windowSizeClass = androidx.compose.material3.windowsizeclass.calculateWindowSizeClass(this@MainActivity)
+                    MainFuelScreen(viewModel = viewModel, windowSizeClass = windowSizeClass)
                 }
             }
         }

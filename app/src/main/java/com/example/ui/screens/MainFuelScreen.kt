@@ -36,6 +36,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.material3.windowsizeclass.WindowSizeClass
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,7 +75,8 @@ import androidx.compose.ui.graphics.Path
 @Composable
 fun MainFuelScreen(
     viewModel: FuelViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    windowSizeClass: WindowSizeClass? = null
 ) {
     val selectedTab by viewModel.selectedTab.collectAsState() // 0 = Trends, 1 = My Trip, 2 = Near Me (Default Map), 3 = Favorites, 4 = Settings
     val wazeIncidents by viewModel.wazeIncidents.collectAsState()
@@ -170,12 +173,12 @@ fun MainFuelScreen(
         else -> Modifier.border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f))
     }
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val isFoldUnfolded = maxWidth >= 600.dp
+    val isFoldUnfolded = windowSizeClass?.widthSizeClass == WindowWidthSizeClass.Expanded || 
+                         windowSizeClass?.widthSizeClass == WindowWidthSizeClass.Medium
 
-        Row(modifier = Modifier.fillMaxSize()) {
-            if (isFoldUnfolded) {
-                NavigationRail(
+    Row(modifier = Modifier.fillMaxSize()) {
+        if (isFoldUnfolded) {
+            NavigationRail(
                     containerColor = appBarContainerColor,
                     modifier = Modifier.then(appBarBorderModifier).fillMaxHeight()
                 ) {
@@ -900,8 +903,6 @@ fun MainFuelScreen(
             }
         }
     }
-}
-}
 }
 
 @Composable

@@ -16,6 +16,7 @@
     </queries>
 
     <application
+        android:name=".FuelWatchApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -26,6 +27,9 @@
         android:theme="@style/Theme.MyApplication">
 
         <!-- Declare Android Auto Support -->
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1" />
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />

@@ -58,49 +58,44 @@ class FuelRepository(
             }
         }
 
+    private val dataSources = listOf(
+        com.example.data.network.WaFuelDataSource(okHttpClient),
+        com.example.data.network.NswFuelDataSource(okHttpClient),
+        com.example.data.network.QldFuelDataSource(okHttpClient),
+        com.example.data.network.VicFuelDataSource(okHttpClient),
+        com.example.data.network.SaFuelDataSource(okHttpClient),
+        com.example.data.network.TasFuelDataSource(okHttpClient),
+        com.example.data.network.NtFuelDataSource(okHttpClient)
+    )
+
     suspend fun fetchFuelPrices(
         productId: Int? = null,
         day: String? = null,
         suburb: String? = null,
         brand: String? = null,
-        region: String? = null
+        region: String? = null,
+        stateCode: String? = null
     ): List<FuelStation> = withContext(Dispatchers.IO) {
-        val baseUrl = "https://www.fuelwatch.wa.gov.au/fuelwatch/fuelwatchRSS"
-        val urlBuilder = baseUrl.toHttpUrl().newBuilder()
-
-        productId?.let { urlBuilder.addQueryParameter("Product", it.toString()) }
-        day?.let { urlBuilder.addQueryParameter("Day", it) }
-        suburb?.let { if (it.isNotBlank()) urlBuilder.addQueryParameter("Suburb", it) }
-        brand?.let { if (it.isNotBlank()) urlBuilder.addQueryParameter("Brand", it) }
-        region?.let { if (it.isNotBlank()) urlBuilder.addQueryParameter("Region", it) }
-
-        val url = urlBuilder.build().toString()
-        Log.d(TAG, "Fetching fuel prices from URL: $url")
-
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36")
-            .build()
-
-        try {
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    Log.e(TAG, "Unsuccessful response from FuelWatch: ${response.code} ${response.message}")
-                    throw IOException("Unexpected code $response")
-                }
-
-                val xmlBody = response.body?.string() ?: ""
-                if (xmlBody.isBlank()) {
-                    Log.e(TAG, "Empty body returned from FuelWatch")
-                    return@withContext emptyList()
-                }
-
-                return@withContext FuelWatchParser.parse(xmlBody, day ?: "today")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception during fetchFuelPrices: ${e.message}", e)
-            throw e
+        val targetSources = if (stateCode != null) {
+            dataSources.filter { it.stateCode.equals(stateCode, ignoreCase = true) }
+        } else {
+            // For safety, just use WA if no state is specified for now
+            dataSources.filter { it.stateCode == "WA" }
         }
+        
+        val allStations = mutableListOf<FuelStation>()
+        
+        // Fetch from all targeted state providers concurrently (if we wanted to)
+        // Here we just iterate sequentially for simplicity
+        for (source in targetSources) {
+            try {
+                allStations.addAll(source.fetchPrices(productId, day, suburb, brand, region))
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching from state ${source.stateCode}: ${e.message}", e)
+            }
+        }
+        
+        return@withContext allStations
     }
 
     suspend fun addFavorite(station: FuelStation) = withContext(Dispatchers.IO) {

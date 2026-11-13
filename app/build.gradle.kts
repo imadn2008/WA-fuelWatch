@@ -21,6 +21,14 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    
+    // Multi-State API Keys
+    buildConfigField("String", "NSW_FUEL_API_KEY", "\"${System.getenv("NSW_FUEL_API_KEY") ?: "MOCK_KEY"}\"")
+    buildConfigField("String", "QLD_FUEL_API_KEY", "\"${System.getenv("QLD_FUEL_API_KEY") ?: "MOCK_KEY"}\"")
+    buildConfigField("String", "SA_FUEL_API_KEY", "\"${System.getenv("SA_FUEL_API_KEY") ?: "MOCK_KEY"}\"")
+    buildConfigField("String", "VIC_FUEL_API_KEY", "\"${System.getenv("VIC_FUEL_API_KEY") ?: "MOCK_KEY"}\"")
+    buildConfigField("String", "TAS_FUEL_API_KEY", "\"${System.getenv("TAS_FUEL_API_KEY") ?: "MOCK_KEY"}\"")
+    buildConfigField("String", "NT_FUEL_API_KEY", "\"${System.getenv("NT_FUEL_API_KEY") ?: "MOCK_KEY"}\"")
   }
 
   signingConfigs {
@@ -43,6 +51,7 @@ android {
     debug { }
   }
   compileOptions {
+    isCoreLibraryDesugaringEnabled = true
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
   }
@@ -75,6 +84,7 @@ dependencies {
   // implementation(libs.androidx.camera.view)
   // Latest Core Material 3 Stable Library
   implementation("androidx.compose.material3:material3:1.4.0")
+  implementation("androidx.compose.material3:material3-window-size-class:1.4.0")
   
   // Includes standard Material Icons & Symbols
   implementation("androidx.compose.material:material-icons-core")
@@ -136,4 +146,8 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.tooling)
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
+  
+  implementation("androidx.work:work-runtime-ktx:2.9.0")
+  
+  coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 }

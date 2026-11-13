@@ -14,7 +14,8 @@ data class FuelStation(
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
     val siteFeatures: String = "",
-    val day: String = "today" // "today" or "tomorrow"
+    val day: String = "today", // "today" or "tomorrow"
+    val state: String = "WA" 
 ) : Serializable {
     val id: String
         get() = "${tradingName.replace(" ", "_")}_${location.replace(" ", "_")}"

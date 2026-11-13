@@ -136,10 +136,10 @@ class FuelListScreen(carContext: androidx.car.app.CarContext) : Screen(carContex
             )
             .build()
 
-        return ListTemplate.Builder()
+        return PlaceListMapTemplate.Builder()
             .setTitle("WA Fuel Watch - ${selectedProduct.displayName}")
             .setHeaderAction(Action.APP_ICON)
-            .setSingleList(listBuilder.build())
+            .setItemList(listBuilder.build())
             .setActionStrip(actionStrip)
             .build()
     }
